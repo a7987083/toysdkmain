@@ -6,6 +6,8 @@
 
 B站实机环境的授权、媒体、充电和预览行为尚未验证。已有官方类型基线，需要对照真实宿主响应与事件，验证后再发布稳定契约。
 
-使用 `npm run sdk:check` 核对四类官方上游。报告位于 `dist/sdk-monitor/`，维护步骤与触发条件见 [SDK 更新监控](docs/sdk-monitor.md)。下一阶段是实际 Toy 测试实验室和游戏公共模块。
+使用 `npm run sdk:check` 核对四类官方上游。报告位于 `dist/sdk-monitor/`，维护步骤与触发条件见 [SDK 更新监控](docs/sdk-monitor.md)。已在实验室提交 `27c166a` 通过 CI。
 
 测试实验室在 `examples/sdk-test-lab/`。用 `npm run lab:build` 生成静态站点，SDK CI 附带可上传 ZIP。平台实测场景与记录方法见 [SDK 实验室](docs/sdk-test-lab.md)。
+
+公共 SDK 位于 `packages/game-core`、`packages/game-storage`、`packages/game-platform`，用法及事务边界见 [游戏公共 SDK](docs/game-services.md)。下一步覆盖统一输入并跑真实 Toy 验证。

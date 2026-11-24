@@ -25,3 +25,8 @@ Initial typed contract subset, adapter, explicit isolated mock and regression te
 
 - 创建 37 个公开方法的手动测试页，支持官方 SDK 和显式 Mock、事件解订阅、媒体释放及诊断导出。
 - CI 打包实验室 ZIP，使用官方 Doctor 静态验证。
+
+## 游戏公共 SDK
+
+- 接入生命周期与页面可见性、版本化存档与显式冲突处理、榜单结算去重、充电鉴权、容器与安全区。
+- 声明统一入口和分模块的 npm 导出。开发包只包含 SDK 源码编译产物及项目说明。

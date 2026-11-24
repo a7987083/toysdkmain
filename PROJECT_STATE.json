@@ -1,14 +1,21 @@
 {
-  "version": "0.1.0-dev.0",
+  "version": "0.3.0-dev.0",
   "branch": "dev",
-  "stage": "sdk-foundation-and-upstream-monitor",
-  "baselineCommit": "a0589f6992e71eebae98c159f9ca60663eee6bc3",
+  "stage": "game-services",
+  "baselineCommit": "27c166a1e2e0f395e67b8a417d89610f281e6b7a",
   "officialSdk": "0.5.5",
   "publicMethods": 37,
   "build": "passed",
   "test": "passed",
-  "ci": "sdk-and-monitor-passed",
+  "ci": "previous-lab-passed",
   "device": "unverified",
   "sdkMonitor": "push-passed",
-  "sdkTestLab": "static-zip-and-browser-smoke"
+  "sdkTestLab": "static-zip-and-browser-smoke",
+  "gameServices": [
+    "lifecycle",
+    "storage",
+    "leaderboard",
+    "charge",
+    "viewport"
+  ]
 }

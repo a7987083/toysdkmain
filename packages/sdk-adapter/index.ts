@@ -167,7 +167,11 @@ export class ToyAdapter {
       if (typeof fn !== 'function') throw new ToyKitError('unsupported', method);
       let active = true;
       const unsubscribe = fn.call(this.sdk, (...args) => {
-        if (active && !this.disposed && (method !== 'onChargeUnlockChange' || validCharge(args[0]))) listener(...args);
+        if (!active || this.disposed) return;
+        if (method === 'onChargeUnlockChange' && !validCharge(args[0])) return;
+        if (method === 'onContainerChange' && !validResponse('getContainerState', args[0])) return;
+        if (method === 'onPlayerChange' && !validResponse('getPlayerState', args[0])) return;
+        listener(...args);
       });
       if (typeof unsubscribe !== 'function') throw new ToyKitError('invalid_response', method);
       const off = () => {

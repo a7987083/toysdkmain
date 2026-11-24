@@ -34,3 +34,12 @@ jobs:
           name: toy-sdk-test-lab
           path: dist/ToyGameKit-SDK-Test-Lab.zip
           if-no-files-found: error
+      - name: Package development SDK
+        run: |
+          mkdir -p dist/npm
+          npm pack --ignore-scripts --pack-destination dist/npm
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: toy-game-kit-sdk
+          path: dist/npm/*.tgz
+          if-no-files-found: error

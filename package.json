@@ -1,15 +1,56 @@
 {
   "name": "toy-game-kit",
-  "version": "0.1.0-dev.0",
+  "version": "0.3.0-dev.0",
   "private": true,
   "type": "module",
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "npm run build && node --test tests/*.test.mjs",
     "sdk:check": "node --use-env-proxy scripts/sdk-monitor.mjs",
-    "lab:build": "npm run build && node scripts/build-sdk-lab.mjs"
+    "lab:build": "npm run build && node scripts/build-sdk-lab.mjs",
+    "prepack": "npm run build"
   },
   "devDependencies": {
     "typescript": "5.9.3"
-  }
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./sdk-contract": {
+      "types": "./dist/sdk-contract/index.d.ts",
+      "default": "./dist/sdk-contract/index.js"
+    },
+    "./sdk-adapter": {
+      "types": "./dist/sdk-adapter/index.d.ts",
+      "default": "./dist/sdk-adapter/index.js"
+    },
+    "./sdk-mock": {
+      "types": "./dist/sdk-mock/index.d.ts",
+      "default": "./dist/sdk-mock/index.js"
+    },
+    "./game-core": {
+      "types": "./dist/game-core/index.d.ts",
+      "default": "./dist/game-core/index.js"
+    },
+    "./game-storage": {
+      "types": "./dist/game-storage/index.d.ts",
+      "default": "./dist/game-storage/index.js"
+    },
+    "./game-platform": {
+      "types": "./dist/game-platform/index.d.ts",
+      "default": "./dist/game-platform/index.js"
+    }
+  },
+  "files": [
+    "dist/index.js",
+    "dist/index.d.ts",
+    "dist/sdk-contract/",
+    "dist/sdk-adapter/",
+    "dist/sdk-mock/",
+    "dist/game-core/",
+    "dist/game-storage/",
+    "dist/game-platform/"
+  ]
 }
