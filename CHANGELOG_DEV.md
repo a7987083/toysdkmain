@@ -20,3 +20,8 @@ Initial typed contract subset, adapter, explicit isolated mock and regression te
 
 - 增加官方 CDN、文档、仓库和 CLI 发布元数据的联网核对、SDK 离线导入和差异报告。
 - 建立 Stable 元数据和候选审核工作流，监控推送结果作为 Artifact，默认分支启用后可进行定时检查。
+
+## SDK 实验室
+
+- 创建 37 个公开方法的手动测试页，支持官方 SDK 和显式 Mock、事件解订阅、媒体释放及诊断导出。
+- CI 打包实验室 ZIP，使用官方 Doctor 静态验证。

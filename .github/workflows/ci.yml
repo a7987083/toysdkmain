@@ -23,3 +23,14 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm test
+      - run: node scripts/build-sdk-lab.mjs
+      - run: node scripts/smoke-sdk-lab.mjs
+      - name: Package SDK test lab
+        run: |
+          cd dist/sdk-test-lab
+          zip -qr ../ToyGameKit-SDK-Test-Lab.zip .
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: toy-sdk-test-lab
+          path: dist/ToyGameKit-SDK-Test-Lab.zip
+          if-no-files-found: error

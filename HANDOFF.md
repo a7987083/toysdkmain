@@ -7,3 +7,5 @@
 B站实机环境的授权、媒体、充电和预览行为尚未验证。已有官方类型基线，需要对照真实宿主响应与事件，验证后再发布稳定契约。
 
 使用 `npm run sdk:check` 核对四类官方上游。报告位于 `dist/sdk-monitor/`，维护步骤与触发条件见 [SDK 更新监控](docs/sdk-monitor.md)。下一阶段是实际 Toy 测试实验室和游戏公共模块。
+
+测试实验室在 `examples/sdk-test-lab/`。用 `npm run lab:build` 生成静态站点，SDK CI 附带可上传 ZIP。平台实测场景与记录方法见 [SDK 实验室](docs/sdk-test-lab.md)。

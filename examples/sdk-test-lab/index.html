@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Toy SDK 实验室</title>
+  <link rel="stylesheet" href="./lab.css">
+  <script async src="https://s1.hdslb.com/bfs/seed/toy/app/sdk/toy-sdk.js"></script>
+  <script type="module" src="./lab.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>Toy SDK 实验室</h1>
+      <p id="session" role="status">等待官方 SDK</p>
+      <p id="baseline"></p>
+    </div>
+    <div class="actions">
+      <button id="probe" type="button">检测能力</button>
+      <button id="mode" type="button">启用本地 Mock</button>
+      <button id="export" type="button">导出测试记录</button>
+    </div>
+  </header>
+  <main>
+    <aside>
+      <label for="filter">公开方法</label>
+      <input id="filter" type="search" placeholder="筛选方法" autocomplete="off">
+      <nav id="methods" aria-label="SDK 方法"></nav>
+    </aside>
+    <section class="detail" aria-labelledby="method">
+      <h2 id="method">选择方法</h2>
+      <p id="note"></p>
+      <label for="args">调用参数 · JSON 数组</label>
+      <textarea id="args" spellcheck="false" autocomplete="off"></textarea>
+      <div class="actions">
+        <button id="run" type="button" class="primary" disabled>运行方法</button>
+        <button id="unsubscribe" type="button" disabled>取消监听</button>
+      </div>
+      <div id="media"></div>
+      <div class="output">
+        <h3>结果</h3>
+        <pre id="result" aria-live="polite">选择方法后手动运行。</pre>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

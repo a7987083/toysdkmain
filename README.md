@@ -19,3 +19,5 @@ const data = await sdk.call('getCloudStorage');
 ```
 
 对需要用户手势的接口，提前初始化 Adapter，再在点击处理器内直接调用。Mock 仅由开发者显式注入。接口基线和使用限制见 [SDK 开发文档](docs/sdk.md)。
+
+[SDK 实验室](docs/sdk-test-lab.md)提供 37 个公开方法的手动验证入口。GitHub Actions 的 `toy-sdk-test-lab` Artifact 含可上传的 ZIP。
