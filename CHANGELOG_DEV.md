@@ -15,3 +15,8 @@ Initial typed contract subset, adapter, explicit isolated mock and regression te
 - Mock 增加周期榜、授权和异常注入、充电与容器事件。新增契约与回归测试。
 
 - 从官方文档页面的类型声明核对作者资料、视频与互动状态，补齐对应契约和回归测试。
+
+## v0.2 上游监控
+
+- 增加官方 CDN、文档、仓库和 CLI 发布元数据的联网核对、SDK 离线导入和差异报告。
+- 建立 Stable 元数据和候选审核工作流，监控推送结果作为 Artifact，默认分支启用后可进行定时检查。

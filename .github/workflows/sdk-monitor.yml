@@ -1,0 +1,67 @@
+name: SDK upstream monitor
+
+on:
+  push:
+    branches: [dev]
+    paths:
+      - .github/workflows/sdk-monitor.yml
+      - scripts/sdk-monitor.mjs
+      - upstream/stable/manifest.json
+  schedule:
+    - cron: '23 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-monitor-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      changed: ${{ steps.compare.outputs.changed }}
+      fingerprint: ${{ steps.compare.outputs.fingerprint }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - id: compare
+        run: npm run sdk:check
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: sdk-upstream-report
+          path: dist/sdk-monitor/*.json
+          if-no-files-found: error
+
+  notify:
+    if: github.event_name == 'schedule' && needs.inspect.outputs.changed == 'true'
+    needs: inspect
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      SDK_FINGERPRINT: ${{ needs.inspect.outputs.fingerprint }}
+    steps:
+      - name: Open a review issue once per candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SDK_FINGERPRINT" =~ ^[a-f0-9]{12}$ ]]
+          title="Review Toy SDK upstream update ($SDK_FINGERPRINT)"
+          existing="$(gh issue list --state all --search "$SDK_FINGERPRINT in:title" --json title --jq '.[].title')"
+          if ! grep -Fxq "$title" <<< "$existing"; then
+            report="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            gh issue create --title "$title" --body "Review the sdk-upstream-report artifact from $report. Confirm the contract and device behavior before promoting the candidate."
+          fi
