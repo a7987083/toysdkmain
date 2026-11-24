@@ -118,11 +118,26 @@ export function validateRequest(method: PromiseMethod, args: readonly unknown[])
   }
 }
 
-const serviceStatuses = new Set(['ok', 'unauthorized', 'denied', 'unsupported', 'toy_context_unavailable', 'unavailable', 'invalid_argument']);
+const chargeStatuses = new Set(['ok', 'unauthorized', 'denied', 'unsupported', 'toy_context_unavailable', 'unavailable', 'invalid_argument']);
+const dataStatuses = new Set([...chargeStatuses, 'partial', 'author_mismatch', 'video_not_found', 'video_invisible']);
+
+function validDataStatus(value: unknown): value is string {
+  return typeof value === 'string' && dataStatuses.has(value);
+}
+
+function videoSummary(value: unknown): boolean {
+  const item = record(value);
+  const stat = record(item?.stat);
+  return !!item && integer(item.aid, 1) && typeof item.bvid === 'string'
+    && typeof item.title === 'string' && typeof item.cover === 'string'
+    && typeof item.publishTime === 'number' && typeof item.duration === 'number'
+    && !!stat && ['view', 'like', 'coin', 'favorite', 'share', 'comment', 'danmaku']
+      .every(key => typeof stat[key] === 'number');
+}
 
 export function validCharge(value: unknown): boolean {
   const result = record(value);
-  return Boolean(result && serviceStatuses.has(String(result.status))
+  return Boolean(result && typeof result.status === 'string' && chargeStatuses.has(result.status)
     && (result.status !== 'ok' || typeof record(result.data)?.unlocked === 'boolean'));
 }
 
@@ -149,14 +164,25 @@ export function validResponse(method: PromiseMethod, value: unknown): boolean {
     case 'saveImageToAlbum': return typeof result?.localPath === 'string';
     case 'requestCamera':
     case 'requestMicrophone': return typeof result?.getTracks === 'function';
-    case 'getAuthorVideoRange': return Array.isArray(result?.items) && typeof result.hasMore === 'boolean';
-    case 'getVideoUserActions': return typeof result?.status === 'string' && Array.isArray(result.items);
-    case 'getAuthorProfile':
-    case 'getAuthorRelation': return typeof result?.status === 'string' && (result.status !== 'ok' || !!record(result.data));
-    case 'getAuthorVideos':
-    case 'getAnnualReport':
-    case 'getContainerState':
-    case 'getPlayerState': return !!result;
+    case 'getAuthorVideoRange': return Array.isArray(result?.items) && typeof result.hasMore === 'boolean'
+      && result.items.every(item => videoSummary(item) && typeof item.isCooperation === 'boolean');
+    case 'getVideoUserActions': return validDataStatus(result?.status) && Array.isArray(result?.items)
+      && result.items.every(item => integer(item?.aid, 0) && typeof item.bvid === 'string' && validDataStatus(item.status));
+    case 'getAuthorProfile': return validDataStatus(result?.status)
+      && (result?.data === undefined || typeof record(result.data)?.nickname === 'string');
+    case 'getAuthorRelation': return validDataStatus(result?.status)
+      && (result?.data === undefined || typeof record(result.data)?.isFollowing === 'boolean');
+    case 'getAuthorVideos': return validDataStatus(result?.status) && Array.isArray(result?.items)
+      && result.items.every(item => validDataStatus(item?.status) && !!record(item.ref)
+        && (item.data === undefined || videoSummary(item.data)));
+    case 'getAnnualReport': return typeof result?.watch_duration === 'number'
+      && Array.isArray(result.hot_arch_list) && (result.target === null || !!record(result.target));
+    case 'getContainerState': return !!result && ['phone', 'tablet', 'desktop', 'unknown'].includes(String(result.deviceType))
+      && ['landscape', 'portrait'].includes(String(result.orientation)) && typeof result.immersive === 'boolean'
+      && !!record(result.viewport) && !!record(result.safeArea) && Array.isArray(result.changedFields);
+    case 'getPlayerState': return !!result && integer(result.position, 0) && integer(result.duration, 0)
+      && typeof result.playing === 'boolean' && typeof result.muted === 'boolean'
+      && typeof result.rate === 'number' && integer(result.timestamp, 0) && Array.isArray(result.changedFields);
     default: return value === undefined;
   }
 }

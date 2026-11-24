@@ -11,32 +11,92 @@ export type ImageRequest =
 export type VideoRef = { aid: number; bvid?: never } | { bvid: string; aid?: never };
 export type VideoActionsQuery = { aids: number[]; videos?: never } | { videos: VideoRef[]; aids?: never };
 export type VideoRangeQuery = { start?: number; end?: number };
-export type ServiceResult<T> =
-  | { status: 'ok'; data: T }
-  | { status: 'unauthorized' | 'denied' | 'unsupported' | 'toy_context_unavailable' | 'unavailable' | 'invalid_argument' };
-export type ChargeUnlockResp = ServiceResult<{ unlocked: boolean }>;
-export type AuthorProfileResp = ServiceResult<{ nickname: string; follower: number } & Record<string, unknown>>;
-export type AuthorRelationResp = ServiceResult<{ isFollowing: boolean; hasFanMedal: boolean } & Record<string, unknown>>;
-export type AuthorVideosResp = Record<string, unknown>; // The SDK forwards the undocumented server envelope.
+export type ToyDataStatus =
+  | 'ok' | 'partial' | 'unauthorized' | 'denied' | 'unsupported' | 'toy_context_unavailable'
+  | 'author_mismatch' | 'video_not_found' | 'video_invisible' | 'unavailable' | 'invalid_argument';
+export type ToyItemStatus = Exclude<ToyDataStatus, 'partial'>;
 
-export interface AuthorRangeVideo {
+export type ChargeUnlockResp =
+  | { status: 'ok'; data: { unlocked: boolean } }
+  | { status: 'unauthorized' | 'denied' | 'unsupported' | 'toy_context_unavailable' | 'unavailable' | 'invalid_argument' };
+
+export interface AuthorProfile {
+  nickname: string;
+  avatar: string;
+  sign: string;
+  certification?: { role: number; title: string; description: string; type: number };
+  following: number;
+  follower: number;
+  archiveCount: number;
+  charging?: { count: number; display?: { show: boolean; text?: string } };
+  fanMedal?: {
+    name: string;
+    enabled: boolean;
+    levels: Array<{ level: number; minIntimacy: number; maxIntimacy?: number }>;
+  };
+  birthday?: number;
+}
+
+export type AuthorProfileResp = { status: ToyDataStatus; data?: AuthorProfile };
+
+interface VideoStats {
+  view: number;
+  like: number;
+  coin: number;
+  favorite: number;
+  share: number;
+  comment: number;
+  danmaku: number;
+}
+
+interface VideoSummary {
   aid: number;
   bvid: string;
   title: string;
   cover: string;
   publishTime: number;
   duration: number;
-  stat: Record<string, number>;
-  isCooperation: boolean;
+  stat: VideoStats;
 }
 
+export type AuthorRangeVideo = VideoSummary & { isCooperation: boolean };
 export type AuthorVideoRange = { items: AuthorRangeVideo[]; hasMore: boolean };
-export type AuthorVideo = { title: string; cover: string } & Record<string, unknown>;
-export type VideoUserAction = { aid: number; bvid: string; ref?: VideoRef } & (
-  | { status: 'ok'; liked: boolean; coinCount: number; favorited: boolean }
-  | { status: 'not_found' | 'unavailable' | 'unsupported' | 'denied' }
-);
-export type VideoUserActionsResp = { status: string; items: VideoUserAction[] };
+export interface AuthorVideo extends VideoSummary {
+  description: string;
+  partition?: string;
+  pages: Array<{ page: number; title: string; duration: number }>;
+  pay: { chargingPay: boolean; paid: boolean };
+  seasonId?: number;
+  rank?: { now: number; highest: number };
+}
+export type AuthorVideosResp = {
+  status: ToyDataStatus;
+  items: Array<{ ref: VideoRef; status: ToyItemStatus; data?: AuthorVideo }>;
+};
+
+export interface AuthorRelation {
+  isFollowing: boolean;
+  isAuthor: boolean;
+  isOldFan: boolean;
+  hasFanMedal: boolean;
+  fanMedalName?: string;
+  fanMedalLevel?: number;
+  isFanMedalActive?: boolean;
+  isCharging: boolean;
+  followTime?: number;
+}
+export type AuthorRelationResp = { status: ToyDataStatus; data?: AuthorRelation };
+
+export interface VideoUserAction {
+  aid: number;
+  bvid: string;
+  ref?: VideoRef;
+  status: ToyItemStatus;
+  liked?: boolean;
+  coinCount?: number;
+  favorited?: boolean;
+}
+export type VideoUserActionsResp = { status: ToyDataStatus; items: VideoUserAction[] };
 
 export interface AnnualReport {
   target: { nickname: string; avatar: string } | null;

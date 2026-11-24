@@ -13,3 +13,5 @@ Initial typed contract subset, adapter, explicit isolated mock and regression te
 - 增加全部 37 个文档化方法的类型与调用入口，保留原 Adapter 快捷方法。
 - Adapter 增加显式能力探测、参数和关键返回值校验、错误分类、超时、在途限制、读取退避、分数去重和资源释放。
 - Mock 增加周期榜、授权和异常注入、充电与容器事件。新增契约与回归测试。
+
+- 从官方文档页面的类型声明核对作者资料、视频与互动状态，补齐对应契约和回归测试。

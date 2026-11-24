@@ -230,9 +230,9 @@ export class MockSDK implements ToySDK {
     return this.options.fixtures?.getAuthorProfile?.() ?? { status: 'unavailable' } as const;
   }
 
-  async getAuthorVideos(req: Parameters<ToySDK['getAuthorVideos']>[0]) {
+  async getAuthorVideos(req: Parameters<ToySDK['getAuthorVideos']>[0]): ReturnType<ToySDK['getAuthorVideos']> {
     await this.check('getAuthorVideos');
-    return this.options.fixtures?.getAuthorVideos?.(req) ?? fail('fixture_unavailable');
+    return this.options.fixtures?.getAuthorVideos?.(req) ?? { status: 'unavailable', items: [] };
   }
 
   async getAuthorVideoRange(req?: Parameters<ToySDK['getAuthorVideoRange']>[0]) {
@@ -245,7 +245,7 @@ export class MockSDK implements ToySDK {
     return this.options.fixtures?.getAuthorRelation?.() ?? { status: this.player ? 'unavailable' : 'unauthorized' } as const;
   }
 
-  async getVideoUserActions(req: Parameters<ToySDK['getVideoUserActions']>[0]) {
+  async getVideoUserActions(req: Parameters<ToySDK['getVideoUserActions']>[0]): ReturnType<ToySDK['getVideoUserActions']> {
     await this.check('getVideoUserActions');
     return this.options.fixtures?.getVideoUserActions?.(req) ?? { status: this.player ? 'unavailable' : 'unauthorized', items: [] };
   }

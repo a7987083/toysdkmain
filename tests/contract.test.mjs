@@ -165,3 +165,23 @@ test('identical in-flight score submissions stay blocked after timeout until the
   finish({ score: 10 });
   assert.deepEqual(await retry, { score: 10 });
 });
+
+test('author responses preserve documented per-item video status and video statistics', async () => {
+  const video = {
+    aid: 1, bvid: 'BV17x411w7KC', title: 'Fixture', cover: '', description: '', publishTime: 1, duration: 2,
+    stat: { view: 6, like: 0, coin: 0, favorite: 0, share: 0, comment: 0, danmaku: 0 },
+    pages: [], pay: { chargingPay: false, paid: false },
+  };
+  const adapter = new ToyAdapter(new MockSDK(new MockStore(), 'toy', 'player', new Set(), {
+    fixtures: {
+      getAuthorVideos: async () => ({ status: 'partial', items: [
+        { ref: { aid: 1 }, status: 'ok', data: video },
+        { ref: { aid: 2 }, status: 'video_invisible' },
+      ] }),
+    },
+  }));
+  const result = await adapter.call('getAuthorVideos', { videos: [{ aid: 1 }, { aid: 2 }] });
+  assert.equal(result.items[0].data.stat.view, 6);
+  assert.equal(result.items[1].status, 'video_invisible');
+  assert.equal(result.items[1].data, undefined);
+});
