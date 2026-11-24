@@ -1,6 +1,8 @@
-# Roadmap
-- v0.1: complete public contract, adapter, mock, contract tests.
-- v0.2: upstream monitoring and CI.
-- v0.3: storage lifecycle and game services.
-- v0.4: test lab and device checks.
-- v0.5: engine templates.
+# ToyGameKit 路线
+
+- v0.1：公开 API 类型、Adapter、Mock、可复现构建、测试和 CI。待补齐实测数据和平台兼容性。
+- v0.2：上游基线、候选版本、差异检测与审计，人工确认升级。
+- v0.3：游戏生命周期、存档、排行榜与平台公共模块。
+- v0.4：SDK 实验室和实机验证。
+- v0.5：Vanilla、Phaser、Babylon.js 模板，以及 Hology 评估。
+- v0.6：游戏开发工具、官方发布工具集成与交接。

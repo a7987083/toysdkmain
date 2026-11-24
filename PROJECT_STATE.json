@@ -1,8 +1,12 @@
 {
   "version": "0.1.0-dev.0",
   "branch": "dev",
-  "stage": "initial-subset",
-  "build": "unverified",
-  "ci": "not-configured",
+  "stage": "sdk-foundation",
+  "baselineCommit": "a0589f6992e71eebae98c159f9ca60663eee6bc3",
+  "officialSdk": "0.5.5",
+  "publicMethods": 37,
+  "build": "passed",
+  "test": "passed",
+  "ci": "baseline-passed",
   "device": "unverified"
 }

@@ -1,9 +1,12 @@
+import type { ToyPlatformSDK } from "./platform.js";
+export * from "./platform.js";
+
 export type KV = Record<string,string>;
 export type Board = 1|2|3|4|5;
 export type Period = 'all'|'month'|'week'|'day';
 export interface RankQuery {board?:Board;period?:Period}
 export interface RankItem {rank:number;score:number;nickname:string;avatar:string}
-export interface ToySDK {
+export interface ToyCoreSDK {
  isSupport(name:string):Promise<boolean>;
  getUserProfile():Promise<{avatar:string;nickname:string;toyOpenId?:string}>;
  getCloudStorage(keys?:string[]):Promise<KV>;
@@ -33,3 +36,24 @@ export function validateRank(req:RankQuery={}):void{
 export function validateScore(score:number):void{
  if(!Number.isInteger(score)||score<limits.minScore||score>limits.maxScore)throw new Error('invalid_param: score');
 }
+
+export interface ToySDK extends ToyCoreSDK, ToyPlatformSDK {}
+
+export const subscriptionMethods = [
+  'onChargeUnlockChange', 'onContainerChange', 'onPlayerChange', 'onPageClose',
+] as const satisfies ReadonlyArray<keyof ToySDK>;
+export type SubscriptionMethod = typeof subscriptionMethods[number];
+
+export const promiseMethods = [
+  'isSupport', 'navigate', 'saveImageToAlbum', 'share', 'getQrCode', 'sharePicture', 'closeBrowser',
+  'getUserProfile', 'getAuthorProfile', 'getAuthorVideos', 'getAuthorVideoRange', 'getAuthorRelation',
+  'getVideoUserActions', 'getAnnualReport', 'getChargeUnlock', 'openChargePanel',
+  'setCloudStorage', 'getCloudStorage', 'removeCloudStorage',
+  'setSharedStorage', 'getSharedStorage', 'removeSharedStorage',
+  'submitScore', 'getRankList', 'getMyRank', 'requestCamera', 'requestMicrophone', 'stopMedia',
+  'getContainerState', 'setContainerMode', 'getPlayerState', 'setPlayerState', 'checkInputSafety',
+] as const satisfies ReadonlyArray<Exclude<keyof ToySDK, SubscriptionMethod>>;
+export type PromiseMethod = typeof promiseMethods[number];
+
+type Assert<T extends true> = T;
+type PublicMethodCoverage = Assert<Exclude<keyof ToySDK, PromiseMethod | SubscriptionMethod> extends never ? true : false>;

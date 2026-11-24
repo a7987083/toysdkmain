@@ -1,5 +1,7 @@
-# Known issues
-- Partial SDK coverage; payment, container, media and author APIs not implemented.
-- Mock supports all-time rank only; memory-only storage, no authorization UI.
-- No runtime timeout, migration or conflict handling yet.
-- No lockfile, CI or real-device verification yet.
+# 已知问题
+
+- 作者视频批查及互动关系的部分服务端响应字段缺少完整的公开 schema。
+- 部分复杂响应目前只验证顶层形状，SDK 与平台返回的数据需要在真实 Toy 环境复核。
+- iOS、Android、HarmonyOS、预览和外部浏览器尚未进行实机联调。
+- Mock 排行榜的周期切换时间和预览限制需与真实平台对照。
+- 充电事件存在方法可见性和能力探测结果不一致的可能，实际调用需处理失败。
