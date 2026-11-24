@@ -1,0 +1,8 @@
+{
+  "version": "0.1.0-dev.0",
+  "branch": "dev",
+  "stage": "initial-subset",
+  "build": "unverified",
+  "ci": "not-configured",
+  "device": "unverified"
+}

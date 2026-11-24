@@ -1,7 +1,5 @@
 # ToyGameKit
 
-Bilibili Toy game development infrastructure. Development in `dev`; `main` is not a production release yet.
+Bilibili Toy development infrastructure. Initial development subset on dev; not a production release.
 
-Initial scope: documented SDK contracts, explicit runtime adapter and isolated mock. Official SDK remains externally loaded; no redistribution of the vendor bundle.
-
-Status: bootstrap only. No real-device validation.
+Run `npm install` then `npm test`. Official SDK is externally loaded; mock is explicitly injected.
