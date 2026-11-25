@@ -17,7 +17,8 @@ export class ToyKitError extends Error {
     readonly method?: keyof ToySDK,
     readonly code?: number,
     cause?: unknown,
-    readonly outcome?: 'unknown',
+    readonly outcome?: 'unknown' | 'not_sent' | 'rejected',
+    readonly hostSettled?: Promise<void>,
   ) {
     super(method ? `${type}: ${method}` : type, { cause });
     this.name = 'ToyKitError';
@@ -63,7 +64,7 @@ export class ToyAdapter {
   private pending = 0;
   private disposed = false;
   private readonly waiters = new Set<() => void>();
-  private readonly releasing = new WeakSet<MediaStream>();
+  private readonly releasing = new WeakMap<MediaStream, Promise<void>>();
   private disposal?: Promise<void>;
   private waiting = 0;
   readonly telemetry: SdkDiagnostics;
@@ -104,12 +105,13 @@ export class ToyAdapter {
       disposed: this.disposed,
       pending: this.pending,
       waiting: this.waiting,
+      activeStreams: this.streams.size,
     };
   }
 
   async supports(method: keyof ToySDK): Promise<boolean> {
     if (!promises.has(method) && !subscriptions.has(method)) throw new ToyKitError('invalid_param');
-    if (this.disposed) return false;
+    if (this.disposed || method === 'getAuthorVideoRange') return false;
     if (typeof this.sdk[method] !== 'function') return false;
     if (method === 'isSupport') return true;
     return this.call('isSupport', method);
@@ -132,6 +134,8 @@ export class ToyAdapter {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let cancel: (() => void) | undefined;
     let abort: (() => void) | undefined;
+    let dispatched = false;
+    let hostSettled: Promise<void> | undefined;
     let abandoned = false;
     let outcome: 'ok' | 'timeout' | 'rate_limited' | 'error' = 'ok';
     let code: number | undefined;
@@ -141,6 +145,7 @@ export class ToyAdapter {
       if (this.disposed) throw new ToyKitError('disposed', method);
       if (signal?.aborted) throw new ToyKitError('cancelled', method);
       validateRequest(method, args);
+      if (method === 'getAuthorVideoRange') throw new ToyKitError('undocumented', method);
       if (method === 'stopMedia' && (this.streams.has(args[0] as MediaStream) || this.releasing.has(args[0] as MediaStream))) {
         return await this.releaseStream(args[0] as MediaStream);
       }
@@ -159,11 +164,13 @@ export class ToyAdapter {
       let request: Promise<unknown>;
       try {
         // Invoke inside the original gesture stack.
+        dispatched = true;
         request = Promise.resolve(fn.apply(this.sdk, args));
       } catch (error) {
         settle();
         throw error;
       }
+      if (mutation) hostSettled = request.then(() => {}, () => {});
       this.waiting++;
       const result = await Promise.race([
         request.then(value => {
@@ -200,8 +207,9 @@ export class ToyAdapter {
       const error = normalize(reason, method);
       code = error.code;
       outcome = error.type === 'timeout' ? 'timeout' : code === 307044 ? 'rate_limited' : 'error';
-      if (mutation && (error.type === 'network_error' || error.type === 'bridge_unavailable' || error.type === 'sdk_error')) {
-        throw new ToyKitError(error.type, method, error.code, error, mutation);
+      if (mutation) {
+        const stage = !dispatched ? 'not_sent' : error.type === 'http_error' && error.code === 307044 ? 'rejected' : 'unknown';
+        throw new ToyKitError(error.type, method, error.code, error, stage, hostSettled);
       }
       throw error;
     } finally {
@@ -226,7 +234,7 @@ export class ToyAdapter {
         return await this.call(method, ...args);
       } catch (error) {
         if (!(error instanceof ToyKitError) || error.code !== 307044 || attempt >= 2) throw error;
-        await pause(250 * 2 ** attempt);
+        await pause((200 + Math.random() * 100) * 2 ** attempt);
       }
     }
   }
@@ -288,9 +296,15 @@ export class ToyAdapter {
     void this.releaseStream(stream).catch(() => {});
   }
 
-  private async releaseStream(stream: MediaStream): Promise<void> {
-    if (this.releasing.has(stream)) return;
-    this.releasing.add(stream);
+  private releaseStream(stream: MediaStream): Promise<void> {
+    const prior = this.releasing.get(stream);
+    if (prior) return prior;
+    const result = Promise.resolve().then(() => this.stopTracksAndHost(stream));
+    this.releasing.set(stream, result);
+    return result;
+  }
+
+  private async stopTracksAndHost(stream: MediaStream): Promise<void> {
     try {
       this.streams.delete(stream);
       let trackError: unknown;

@@ -3,7 +3,7 @@ import type { ToySDK } from '../sdk-contract/index.js';
 import { sharedCloud, toyCloud, type SaveSession, type SaveCloud } from '../game-storage/index.js';
 
 export type SessionState =
-  | { status: 'unknown' | 'guest'; generation: number }
+  | { status: 'unknown' | 'guest'; reason?: string; generation: number }
   | { status: 'user'; generation: number; profile: Omit<Awaited<ReturnType<ToySDK['getUserProfile']>>, 'toyOpenId'>;
       persistentIdentity: boolean };
 
@@ -13,8 +13,12 @@ export class ToySession {
   private readonly events = new EventTarget();
   private state: SessionState = { status: 'unknown', generation: 0 };
   private identity?: string;
+  private verificationEnabled = false;
+  private pending?: Promise<Readonly<SessionState>>;
+  private generation = 0;
   private epoch = 0;
   private disposed = false;
+  private readonly listeners = new Set<() => void>();
   private offVisibility?: () => void;
 
   constructor(private readonly adapter: ToyAdapter) {}
@@ -22,33 +26,50 @@ export class ToySession {
   get current(): Readonly<SessionState> { return this.state; }
 
   onChange(listener: (state: Readonly<SessionState>) => void): () => void {
+    if (this.disposed) throw new ToyKitError('disposed');
     const wrapped = () => listener(this.current);
     this.events.addEventListener('session', wrapped);
-    return () => this.events.removeEventListener('session', wrapped);
+    const off = () => { this.events.removeEventListener('session', wrapped); this.listeners.delete(off); };
+    this.listeners.add(off);
+    return off;
   }
 
-  async refresh(): Promise<Readonly<SessionState>> {
-    if (this.disposed) throw new ToyKitError('disposed');
+  refresh(options: { supersede?: boolean } = {}): Promise<Readonly<SessionState>> {
+    if (this.disposed) return Promise.reject(new ToyKitError('disposed'));
+    if (this.pending && !options.supersede) return this.pending;
+    this.verificationEnabled = true;
     const epoch = ++this.epoch;
+    const result = Promise.resolve().then(async () => {
+      if (this.epoch !== epoch) return this.state;
+      try {
+        const { toyOpenId, avatar, nickname } = await this.adapter.profile();
+        if (this.epoch === epoch) {
+          if (!toyOpenId || this.identity !== toyOpenId) this.generation++;
+          this.identity = toyOpenId || undefined;
+          this.update({ status: 'user', profile: Object.freeze({ avatar, nickname }), persistentIdentity: Boolean(this.identity) });
+        }
+      } catch (error) {
+        if (this.epoch === epoch) {
+          const reason = error instanceof ToyKitError ? error.category : 'unknown';
+          if (error instanceof ToyKitError && error.type === 'not_logged_in') {
+            this.identity = undefined;
+            this.generation++;
+            this.update({ status: 'guest', reason: 'not_logged_in' });
+          } else this.update({ status: 'unknown', reason: ['network_error','permission_denied','timeout'].includes(reason) ? reason : 'unknown' });
+        }
+      }
+      return this.state;
+    }).finally(() => { if (this.pending === result) this.pending = undefined; });
+    this.pending = result;
     this.update({ status: 'unknown' });
-    if (this.disposed || this.epoch !== epoch) return this.state;
-    try {
-      const { toyOpenId, avatar, nickname } = await this.adapter.profile();
-      if (this.epoch === epoch) {
-        this.identity = toyOpenId || undefined;
-        this.update({ status: 'user', profile: Object.freeze({ avatar, nickname }), persistentIdentity: Boolean(this.identity) });
-      }
-    } catch (error) {
-      if (this.epoch === epoch) {
-        this.identity = undefined;
-        if (error instanceof ToyKitError && error.type === 'not_logged_in') this.update({ status: 'guest' });
-      }
-    }
-    return this.state;
+    return result;
   }
 
   enterGuest(): void {
     if (this.disposed) throw new ToyKitError('disposed');
+    this.verificationEnabled = false;
+    this.pending = undefined;
+    this.generation++;
     this.epoch++;
     this.identity = undefined;
     this.update({ status: 'guest' });
@@ -60,7 +81,7 @@ export class ToySession {
     if (!source) throw new ToyKitError('unsupported');
     this.offVisibility?.();
     const listener = () => {
-      if (!source.hidden && !this.disposed && this.identity) void this.refresh();
+      if (!source.hidden && !this.disposed && this.verificationEnabled) void this.refresh();
     };
     const off = () => {
       source.removeEventListener('visibilitychange', listener);
@@ -88,7 +109,12 @@ export class ToySession {
 
   storage(storageId?: string): SaveSession {
     if (this.disposed) throw new ToyKitError('disposed');
-    if (this.state.status === 'guest') return { mode: 'guest' };
+    if (this.state.status === 'guest') {
+      const generation = this.generation;
+      return { mode: 'guest', check: () => {
+        if (this.generation !== generation || this.state.status !== 'guest') throw new ToyKitError('session_changed');
+      } };
+    }
     const identity = this.identity;
     if (!identity) throw new ToyKitError('session_identity_unavailable');
     const check = this.scope();
@@ -109,14 +135,18 @@ export class ToySession {
   dispose(): void {
     if (this.disposed) return;
     this.disposed = true;
+    this.verificationEnabled = false;
+    this.pending = undefined;
+    this.generation++;
     this.epoch++;
     this.identity = undefined;
     this.offVisibility?.();
     this.update({ status: 'unknown' });
+    for (const off of this.listeners) off();
   }
 
-  private update(state: { status: 'unknown' | 'guest' } | Omit<Extract<SessionState, { status: 'user' }>, 'generation'>): void {
-    this.state = Object.freeze({ ...state, generation: this.state.generation + 1 });
+  private update(state: { status: 'unknown' | 'guest'; reason?: string } | Omit<Extract<SessionState, { status: 'user' }>, 'generation'>): void {
+    this.state = Object.freeze({ ...state, generation: this.generation });
     this.events.dispatchEvent(new Event('session'));
   }
 }

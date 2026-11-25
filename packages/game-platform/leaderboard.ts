@@ -47,6 +47,12 @@ export class GameLeaderboard {
     return result;
   }
 
+  diagnostics() {
+    this.options?.checkSession?.();
+    return { persistence: this.options ? 'cache' : 'memory', pending: this.inFlight.size,
+      uncertain: [...this.receipts.values()].filter(entry => entry.state === 'unknown').length };
+  }
+
   settlement(id: string): SettlementState | undefined {
     this.options?.checkSession?.();
     if (this.inFlight.has(id)) return 'pending';
@@ -77,7 +83,7 @@ export class GameLeaderboard {
         this.store(id, { score, at, state: 'confirmed', confirmedScore: result.score });
         return result;
       } catch (error) {
-        const definite = error instanceof ToyKitError && !error.outcome && error.type !== 'session_changed';
+        const definite = error instanceof ToyKitError && (error.outcome === 'not_sent' || error.outcome === 'rejected');
         try { this.store(id, { score, at, state: definite ? 'failed' : 'unknown' }); }
         catch (persistError) {
           if (definite) throw error;
@@ -89,16 +95,33 @@ export class GameLeaderboard {
         throw error;
       }
     };
-    const locks = this.options?.locks ?? globalThis.navigator?.locks;
-    if (this.options && typeof globalThis.Storage === 'function' && this.options.storage instanceof globalThis.Storage && !locks) {
-      throw new Error('settlement_lock_unavailable');
-    }
-    const result = this.key && locks ? Promise.resolve(locks.request(this.key, operation)) : operation();
+    const result = this.coordinate(operation);
     this.inFlight.set(id, { score, result });
     try { return await result; }
     finally { this.inFlight.delete(id); }
   }
 
+
+  async discardUnknown(id: string): Promise<void> {
+    if (this.inFlight.has(id)) throw new Error('settlement_pending');
+    await this.coordinate(async () => {
+      this.options?.checkSession?.();
+      this.load();
+      if (this.receipts.get(id)?.state !== 'unknown') throw new Error('settlement_not_unknown');
+      const entries = new Map(this.receipts);
+      entries.delete(id);
+      if (this.options && this.key) this.options.storage.setItem(this.key, JSON.stringify([...entries]));
+      this.receipts = entries;
+    });
+  }
+
+  private coordinate<T>(operation: () => Promise<T>): Promise<T> {
+    const locks = this.options?.locks ?? globalThis.navigator?.locks;
+    if (this.options && typeof globalThis.Storage === 'function' && this.options.storage instanceof globalThis.Storage && !locks) {
+      throw new Error('settlement_lock_unavailable');
+    }
+    return this.key && locks ? locks.request(this.key, operation) as Promise<T> : operation();
+  }
 
   private load(): void {
     if (!this.options || !this.key) return;
@@ -113,7 +136,7 @@ export class GameLeaderboard {
       }
       validateScore(receipt.score);
       if (receipt.state === 'confirmed') validateScore(receipt.confirmedScore);
-      if (receipt.at + this.retention >= Date.now()) {
+      if (receipt.state === 'unknown' || receipt.state === 'pending' || receipt.at + this.retention >= Date.now()) {
         restored.set(id, { ...receipt, state: receipt.state === 'pending' ? 'unknown' : receipt.state });
       }
     }

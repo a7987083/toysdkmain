@@ -113,8 +113,9 @@ test('session generations suppress late profile, cloud and charge results', asyn
   const charge = new ChargeAccess(adapter, 1200, session);
   const checking = charge.refresh();
   const refresh = session.refresh();
+  await tick();
   fixture.switchPlayer('player-b');
-  const current = await session.refresh();
+  const current = await session.refresh({ supersede: true });
   assert.equal(current.status, 'user');
   assert.notEqual(session.cacheIdentity(), first);
   oldProfile.resolve({ avatar: '', nickname: 'old', toyOpenId: first });
@@ -254,13 +255,15 @@ test('failed bridge probe and timed out lifecycle initialization can be retried 
 
   const late = deferred();
   let starts = 0;
-  const game = new GameLifecycle({}, { start() { if (++starts === 1) return late.promise; } }, null, 10);
+  let rollbacks = 0;
+  const game = new GameLifecycle({}, { rollbackStart() { rollbacks++; }, start() { if (++starts === 1) return late.promise; } }, null, 10);
   await assert.rejects(game.start(), /game_hook_timeout/);
   await assert.rejects(game.start(), /game_hook_pending/);
   late.resolve();
   await tick();
   await game.start();
   assert.equal(starts, 2);
+  assert.equal(rollbacks, 1);
   await game.dispose();
 });
 

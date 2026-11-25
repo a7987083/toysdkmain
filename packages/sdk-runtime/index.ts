@@ -18,7 +18,7 @@ export class ToyRuntime {
   private adapter?: ToyAdapter;
   private disposal?: Promise<void>;
   private current: RuntimeState = 'idle';
-  private readonly abilities = new Map<keyof ToySDK, Promise<boolean>>();
+  private readonly abilities = new Map<keyof ToySDK, { result: Promise<boolean>; expires: number; pending: boolean }>();
 
   constructor(private readonly options: RuntimeOptions = {}) {}
 
@@ -47,15 +47,21 @@ export class ToyRuntime {
     return this.pending;
   }
 
-  async supports(method: keyof ToySDK): Promise<boolean> {
+  async supports(method: keyof ToySDK, options: { refresh?: boolean } = {}): Promise<boolean> {
     const adapter = await this.initialize();
     const existing = this.abilities.get(method);
-    if (existing) return existing;
-    const result = adapter.supports(method).catch(error => {
-      if (this.abilities.get(method) === result) this.abilities.delete(method);
+    if (existing && (existing.pending || (!options.refresh && performance.now() < existing.expires))) return existing.result;
+    const result = adapter.supports(method).then(value => {
+      if (this.adapter !== adapter) throw new ToyKitError('disposed');
+      entry.pending = false;
+      entry.expires = performance.now() + 30_000;
+      return value;
+    }).catch(error => {
+      if (this.abilities.get(method)?.result === result) this.abilities.delete(method);
       throw error;
     });
-    this.abilities.set(method, result);
+    const entry = { result, expires: 0, pending: true };
+    this.abilities.set(method, entry);
     return result;
   }
 

@@ -1,4 +1,4 @@
-import type { ToyAdapter } from '../sdk-adapter/index.js';
+import { ToyKitError, type ToyAdapter } from '../sdk-adapter/index.js';
 import { limits, validateKey, type KV } from '../sdk-contract/index.js';
 import { SaveCodec, SaveError, type SaveSchema } from './codec.js';
 
@@ -29,7 +29,7 @@ export function sharedCloud(adapter: ToyAdapter, id: string): SaveCloud {
   };
 }
 
-export type SaveSession = { mode: 'guest' } | { mode: 'cloud'; playerKey: string; cloud: SaveCloud; check?: () => void };
+export type SaveSession = { mode: 'guest'; check?: () => void } | { mode: 'cloud'; playerKey: string; cloud: SaveCloud; check?: () => void };
 
 export interface SaveOptions<T> {
   /** Prefixes cloud keys and separates games sharing the same local origin. */
@@ -66,6 +66,21 @@ const isEntry = (value: unknown): value is Entry =>
   && (!Object.hasOwn(value, 'conflict') || Object.hasOwn(value, 'next'))
   && (!Object.hasOwn(value, 'sent') || (typeof (value as Entry).sent === 'string' && Object.hasOwn(value, 'next')));
 
+// Only this realm can witness settlement. Evicted and pre-reload IDs remain uncertain.
+const pendingWrites = new Set<string>();
+const settledWrites = new Set<string>();
+function settled(id: string): void {
+  pendingWrites.delete(id);
+  settledWrites.add(id);
+  if (settledWrites.size > 512) settledWrites.delete(settledWrites.values().next().value!);
+}
+
+export class CorruptCacheError extends SaveError {
+  constructor(cause: unknown, readonly exportOriginal: () => string, readonly resetAfterBackup: () => Promise<void>) {
+    super('corrupt_save', { cause });
+  }
+}
+
 export class GameStorage<T> {
   private readonly codec: SaveCodec<T>;
   private readonly prefix: string;
@@ -77,6 +92,7 @@ export class GameStorage<T> {
   private cacheRevision: string | null = null;
   private readonly checkSession?: () => void;
   private entries: Map<string, Entry>;
+  private syncRequest?: { selection: string; result: Promise<SyncReport> };
   private queue: Promise<unknown> = Promise.resolve();
   private closed = false;
 
@@ -88,8 +104,9 @@ export class GameStorage<T> {
     if (session.mode === 'cloud') {
       if (!session.playerKey || !session.cloud.scope) throw new SaveError('invalid_save');
       this.cloud = session.cloud;
-      this.checkSession = session.check;
+
     }
+    this.checkSession = session.check;
     this.cacheKey = 'toygamekit:' + JSON.stringify([
       options.namespace, session.mode,
       ...(session.mode === 'cloud' ? [session.cloud.scope, session.playerKey] : []),
@@ -99,6 +116,12 @@ export class GameStorage<T> {
     this.locks = options.locks ?? (this.browserCache ? globalThis.navigator?.locks : undefined);
     this.codec = new SaveCodec(options.schema);
     this.entries = this.loadCache();
+  }
+
+  diagnostics() {
+    this.requireOpen();
+    return { persistence: this.cache ? 'cache' : 'memory', dirty: this.pending().length,
+      uncertain: [...this.entries.values()].filter(entry => entry.sent).length };
   }
 
   get(key: string): T | undefined {
@@ -162,7 +185,9 @@ export class GameStorage<T> {
   /** Read selected keys and flush only their pending changes. */
   sync(keys?: readonly string[]): Promise<SyncReport> {
     const selection = keys && [...keys];
-    return this.enqueue(async () => {
+    const signature = JSON.stringify(selection ?? null);
+    if (this.syncRequest?.selection === signature) return this.syncRequest.result;
+    const result = this.enqueue(async () => {
       const cloud = this.cloud;
       if (!cloud) throw new Error('cloud_session_required');
       const wanted = [...new Set(selection ?? this.entries.keys())];
@@ -179,7 +204,10 @@ export class GameStorage<T> {
         const remoteKey = remoteKeys[index]!;
         const raw = Object.hasOwn(remote, remoteKey) ? remote[remoteKey]! : null;
         const entry = entries.get(key);
-        if (entry?.next === undefined || entry.next === raw) {
+        if (entry?.sent && !settledWrites.has(entry.sent)) {
+          entries.set(key, { ...entry, conflict: raw });
+          report.conflicts.push(key);
+        } else if (entry?.next === undefined || entry.next === raw) {
           this.updateBase(entries, key, raw);
         } else if (entry.base !== raw || entry.sent !== undefined) {
           entries.set(key, { ...entry, conflict: raw });
@@ -194,12 +222,30 @@ export class GameStorage<T> {
       const send = async (group: Map<string, RawSave>, operation: () => Promise<void>, target: 'written' | 'deleted') => {
         if (!group.size) return;
         this.requireOpen();
+        const id = crypto.randomUUID();
         const staged = new Map(this.entries);
-        for (const key of group.keys()) staged.set(key, { ...staged.get(key)!, sent: target });
+        for (const key of group.keys()) staged.set(key, { ...staged.get(key)!, sent: id });
         this.commit(staged);
         const keys = [...group.keys()];
         try {
-          await operation();
+          pendingWrites.add(id);
+          try {
+            await operation();
+            settled(id);
+          } catch (error) {
+            if (error instanceof ToyKitError && error.hostSettled) void error.hostSettled.then(() => settled(id));
+            else settled(id);
+            if (error instanceof ToyKitError && (error.outcome === 'not_sent' || error.outcome === 'rejected')) {
+              const unsent = new Map(this.entries);
+              for (const key of keys) {
+                const { sent: _, ...entry } = unsent.get(key)!;
+                unsent.set(key, entry);
+              }
+              this.commit(unsent);
+              throw new SaveSyncError(report, [], error);
+            }
+            throw error;
+          }
           this.requireOpen();
           const observed = await cloud.load(keys.map(key => this.remoteKey(key)));
           this.requireOpen();
@@ -225,7 +271,9 @@ export class GameStorage<T> {
       await send(writes, () => cloud.save(Object.fromEntries([...writes].map(([key, value]) => [this.remoteKey(key), value]))), 'written');
       await send(new Map(deletes.map(key => [key, null])), () => cloud.remove(deletes.map(key => this.remoteKey(key))), 'deleted');
       return report;
-    });
+    }).finally(() => { if (this.syncRequest?.result === result) this.syncRequest = undefined; });
+    this.syncRequest = { selection: signature, result };
+    return result;
   }
 
   conflictReason(key: string): 'remote_changed' | 'unknown_commit' | undefined {
@@ -244,12 +292,14 @@ export class GameStorage<T> {
     return raw === undefined ? undefined : { cloud: raw === null ? undefined : this.codec.decode(raw) };
   }
 
-  resolve(key: string, keep: 'local' | 'cloud'): Promise<void> {
+  resolve(key: string, keep: 'local' | 'cloud', options: { acceptLateWriteRisk?: boolean } = {}): Promise<void> {
     return this.enqueue(() => {
       this.remoteKey(key);
       const entry = this.entries.get(key);
       if (entry?.conflict === undefined || entry.next === undefined) throw new Error('save_conflict_missing');
       const entries = new Map(this.entries);
+      if (entry.sent && pendingWrites.has(entry.sent)) throw new Error('save_write_pending');
+      if (entry.sent && !settledWrites.has(entry.sent) && !options.acceptLateWriteRisk) throw new Error('save_write_unverified');
       if (keep === 'cloud') this.updateBase(entries, key, entry.conflict);
       else {
         if (entry.next !== null) this.protectVersion(entry.conflict);
@@ -336,7 +386,23 @@ export class GameStorage<T> {
       this.cacheRevision = raw;
       return result;
     } catch (cause) {
-      throw new SaveError('corrupt_save', { cause });
+      const original = raw;
+      let exported = false;
+      throw new CorruptCacheError(cause, () => {
+        this.requireOpen();
+        exported = true;
+        return original;
+      }, async () => {
+        const reset = () => {
+          this.requireOpen();
+          if (!exported) throw new Error('cache_backup_required');
+          if (this.cache?.getItem(this.cacheKey) !== original) throw new SaveError('cache_changed');
+          this.cache.removeItem(this.cacheKey);
+        };
+        if (this.locks) await this.locks.request(this.cacheKey, reset);
+        else if (this.browserCache) throw new SaveError('cache_lock_unavailable');
+        else reset();
+      });
     }
   }
 
@@ -346,6 +412,7 @@ export class GameStorage<T> {
   }
 
   private enqueue<R>(operation: () => R | Promise<R>, write = true): Promise<R> {
+    this.syncRequest = undefined;
     const run = async () => {
       this.requireOpen();
       if (write && this.cache) {

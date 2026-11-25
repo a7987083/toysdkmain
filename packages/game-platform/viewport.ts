@@ -30,11 +30,11 @@ export class GameViewport {
     };
     onResize();
     browser?.addEventListener('resize', onResize);
-    let observedEvent = false;
+    let eventSequence = 0;
     let last: string | undefined;
     const publish = (state: ToyContainerState) => {
       if (!active) return;
-      browser?.removeEventListener('resize', onResize);
+      if (offHost) browser?.removeEventListener('resize', onResize);
       const { deviceType, viewport, orientation, immersive, safeArea } = state;
       const layout = { source: 'toy' as const, deviceType, viewport, orientation, immersive, safeArea };
       const signature = JSON.stringify(layout);
@@ -42,18 +42,19 @@ export class GameViewport {
       last = signature;
       listener(layout);
     };
-    const attach = async () => {
-      if (!(await this.adapter.supports('onContainerChange')) || !active) return;
+    // Subscribe synchronously so there is no gap before the authoritative snapshot.
+    // Some hosts expose the public event without listing it in the capability probe.
+    let attaching = true;
+    try {
       offHost = this.adapter.subscribe('onContainerChange', state => {
-        observedEvent = true;
-        publish(state);
+        const sequence = ++eventSequence;
+        if (attaching) queueMicrotask(() => { if (sequence === eventSequence) publish(state); });
+        else publish(state);
       });
-      if (!active) offHost();
-    };
-    const subscription = attach().catch(() => {});
-    void this.adapter.call('getContainerState').then(async state => {
-      await subscription;
-      if (!observedEvent) publish(state);
+    } catch { /* Browser resize remains active on query-only hosts. */ }
+    attaching = false;
+    void this.adapter.call('getContainerState').then(state => {
+      if (!eventSequence) publish(state);
     }).catch(() => {});
     return () => {
       if (!active) return;

@@ -2,6 +2,7 @@ export type GameState = 'idle' | 'running' | 'paused' | 'disposed';
 
 export interface GameHooks<Config> {
   start(config: Readonly<Config>, signal: AbortSignal): void | Promise<void>;
+  rollbackStart?(signal: AbortSignal): void | Promise<void>;
   pause?(signal: AbortSignal): void | Promise<void>;
   resume?(signal: AbortSignal): void | Promise<void>;
   dispose?(signal: AbortSignal): void | Promise<void>;
@@ -13,6 +14,7 @@ export class GameLifecycle<Config> {
   private readonly events = new EventTarget();
   private queue: Promise<unknown> = Promise.resolve();
   private current: GameState = 'idle';
+  private needsRollback = false;
   private requestedPause = false;
   private readonly controller = new AbortController();
   private readonly listeners = new Set<() => void>();
@@ -31,7 +33,12 @@ export class GameLifecycle<Config> {
 
   get state(): GameState { return this.current; }
 
+  diagnostics() {
+    return { state: this.current, hookPending: Boolean(this.pendingGameHook), needsRollback: this.needsRollback };
+  }
+
   onStateChange(listener: (state: GameState) => void): () => void {
+    if (this.disposal) throw new Error('game_disposed');
     const wrapped = (event: Event) => listener((event as CustomEvent<GameState>).detail);
     this.events.addEventListener('state', wrapped);
     const off = () => {
@@ -43,6 +50,7 @@ export class GameLifecycle<Config> {
   }
 
   onError(listener: (error: unknown) => void): () => void {
+    if (this.disposal) throw new Error('game_disposed');
     const wrapped = (event: Event) => listener((event as CustomEvent<unknown>).detail);
     this.events.addEventListener('error', wrapped);
     const off = () => {
@@ -57,7 +65,14 @@ export class GameLifecycle<Config> {
     return this.enqueue(async () => {
       this.requireActive();
       if (this.current === 'idle') {
-        await this.runHook(signal => this.hooks.start(this.config, signal));
+        if (this.pendingGameHook) throw new Error('game_hook_pending');
+        if (this.needsRollback) {
+          if (!this.hooks.rollbackStart) throw new Error('game_start_cleanup_required');
+          await this.runHook(signal => this.hooks.rollbackStart!(signal));
+          this.needsRollback = false;
+        }
+        try { await this.runHook(signal => this.hooks.start(this.config, signal)); }
+        catch (error) { this.needsRollback = true; throw error; }
         this.requireActive();
         this.visibility?.addEventListener('visibilitychange', this.onVisibility);
         this.setState('running');
