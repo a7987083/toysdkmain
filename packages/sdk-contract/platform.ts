@@ -146,7 +146,7 @@ export interface AnnualReport {
 }
 
 export type ContainerMode = { orientation?: 'portrait' | 'landscape' | 'auto'; immersive?: boolean };
-interface ContainerSnapshot {
+export interface ContainerSnapshot {
   deviceType: 'phone' | 'tablet' | 'desktop' | 'unknown';
   viewport: { width: number; height: number };
   orientation: 'portrait' | 'landscape';
@@ -155,7 +155,7 @@ interface ContainerSnapshot {
 }
 export type ToyContainerState = ContainerSnapshot & { changedFields: Array<keyof ContainerSnapshot> };
 export type PlayerChange = { position?: number; playing?: boolean; muted?: boolean };
-interface PlayerSnapshot {
+export interface PlayerSnapshot {
   position: number;
   duration: number;
   playing: boolean;

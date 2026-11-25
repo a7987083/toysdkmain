@@ -51,3 +51,45 @@ test('viewport refresh after visibility restore unsubscribes cleanly',async()=>{
   await viewport.refresh();
   assert.equal(calls,before+1);
 });
+
+test('facade preserves gestures and subscriptions; public contract has one mapping per method',async()=>{
+  const {createToyFacade,MockSDK,MockStore}=await import('../dist/index.js');
+  const fixture=new MockSDK(new MockStore(),'test','a',new Set(),{environment:'app'});
+  let invoked=false;
+  const runtime=new ToyRuntime({sdk:new Proxy(fixture,{get(target,key){
+    if(key==='openChargePanel')return ()=>{invoked=true;return Promise.resolve();};
+    const value=Reflect.get(target,key);return typeof value==='function'?value.bind(target):value;
+  }})});
+  const toy=createToyFacade(runtime);
+  assert.throws(()=>toy.charge.open({minPrice:1200}),/call_ready_first/);
+  await toy.ready();
+  const result=toy.charge.open({minPrice:1200});
+  assert.equal(invoked,true);
+  await result;
+  assert.equal(typeof toy.container.onClose(()=>{}),'function');
+  const facade=await (await import('node:fs/promises')).readFile(new URL('../packages/game-context/facade.ts',import.meta.url),'utf8');
+  const {promiseMethods,subscriptionMethods}=await import('../dist/index.js');
+  const bindings=[...facade.matchAll(/(?:call|event)\('([A-Za-z]+)'\)/g)].map(m=>m[1]);
+  assert.deepEqual([...bindings,'isSupport'].sort(),[...promiseMethods,...subscriptionMethods].filter(k=>k!=='getAuthorVideoRange').sort());
+  await runtime.dispose();
+});
+
+test('borrowed contexts isolate services, preserve verified same-user instances and clean up independently',async()=>{
+  const {createToyGame,MockSDK,MockStore}=await import('../dist/index.js');
+  const sdk=new MockSDK(new MockStore(),'test','a',new Set(),{simulatedIdentity:true});
+  const runtime=new ToyRuntime({sdk});
+  const opts={namespace:'test',runtime,storage:{schema:schema(1)}};
+  const [first,second]=await Promise.all([createToyGame(opts),createToyGame(opts)]);
+  assert.throws(()=>first.storage);
+  await first.session.refresh();
+  const storage=first.storage;
+  await first.session.refresh();
+  assert.equal(first.storage,storage);
+  sdk.switchPlayer('b');await first.session.refresh();
+  assert.notEqual(first.storage,storage);
+  assert.throws(()=>storage.get('k'));
+  await Promise.all([first.dispose(),first.dispose()]);
+  assert.equal(runtime.state,'ready');
+  second.session.enterGuest();await second.storage.put('k',3);
+  await second.dispose();await runtime.dispose();
+});

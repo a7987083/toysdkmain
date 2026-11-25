@@ -44,7 +44,7 @@ jobs:
           if-no-files-found: error
 
   notify:
-    if: github.event_name == 'schedule' && needs.inspect.outputs.changed == 'true'
+    if: always() && github.event_name == 'schedule' && (needs.inspect.outputs.changed == 'true' || needs.inspect.result == 'failure')
     needs: inspect
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -53,15 +53,20 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GH_REPO: ${{ github.repository }}
+      INSPECT_RESULT: ${{ needs.inspect.result }}
       SDK_FINGERPRINT: ${{ needs.inspect.outputs.fingerprint }}
     steps:
       - name: Open a review issue once per candidate
         shell: bash
         run: |
           set -euo pipefail
-          [[ "$SDK_FINGERPRINT" =~ ^[a-f0-9]{12}$ ]]
+          if [[ "$INSPECT_RESULT" == failure ]]; then
+            title="Toy SDK upstream inspection failed"
+          else
+            [[ "$SDK_FINGERPRINT" =~ ^[a-f0-9]{12}$ ]]
           title="Review Toy SDK upstream update ($SDK_FINGERPRINT)"
-          existing="$(gh issue list --state all --search "$SDK_FINGERPRINT in:title" --json title --jq '.[].title')"
+          fi
+          existing="$(gh issue list --state open --search "$title in:title" --json title --jq '.[].title')"
           if ! grep -Fxq "$title" <<< "$existing"; then
             report="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             gh issue create --title "$title" --body "Review the sdk-upstream-report artifact from $report. Confirm the contract and device behavior before promoting the candidate."

@@ -37,6 +37,7 @@ jobs:
         run: |
           mkdir -p dist/npm
           npm pack --ignore-scripts --pack-destination dist/npm
+          (cd dist && sha256sum npm/*.tgz ToyGameKit-SDK-Test-Lab.zip > SHA256SUMS)
       - name: Verify packaged SDK in an independent game
         run: node scripts/smoke-sdk-consumer.mjs dist/npm/*.tgz
       - name: Build Vite consumer from packaged SDK
@@ -56,5 +57,7 @@ jobs:
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: toy-game-kit-sdk
-          path: dist/npm/*.tgz
+          path: |
+            dist/npm/*.tgz
+            dist/SHA256SUMS
           if-no-files-found: error

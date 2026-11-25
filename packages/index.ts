@@ -7,3 +7,4 @@ export * from './game-platform/index.js';
 export * from './sdk-runtime/index.js';
 export * from './sdk-session/index.js';
 export * from './sdk-diagnostics/index.js';
+export * from './game-context/index.js';

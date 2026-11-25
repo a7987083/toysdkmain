@@ -8,6 +8,10 @@ export interface GameLayout extends Omit<ToyContainerState, 'changedFields'> {
 }
 
 export class GameViewport {
+  private disposed = false;
+  private readonly watchers = new Set<Unsubscribe>();
+  dispose() { this.disposed = true; for (const off of this.watchers) off(); }
+
   private readonly refreshers = new Set<() => Promise<void>>();
 
   async refresh(): Promise<void> {
@@ -22,6 +26,7 @@ export class GameViewport {
 
   /** Observe host state when available, and use browser dimensions until the first host event. */
   watch(listener: (layout: GameLayout) => void): Unsubscribe {
+    if (this.disposed) throw new Error('viewport_disposed');
     let active = true;
     let offHost: Unsubscribe | undefined;
     const browser = this.browser;
@@ -79,7 +84,8 @@ export class GameViewport {
     this.visibility?.addEventListener('visibilitychange', visible);
     this.refreshers.add(refresh);
     void refresh();
-    return () => {
+    const off = () => {
+      this.watchers.delete(off);
       if (!active) return;
       active = false;
       this.refreshers.delete(refresh);
@@ -87,10 +93,13 @@ export class GameViewport {
       browser?.removeEventListener('resize', onResize);
       offHost?.();
     };
+    this.watchers.add(off);
+    return off;
   }
 
   /** A successful request still needs confirmation from a matching host layout event. */
   requestMode(mode: ContainerMode): Promise<void> {
+    if (this.disposed) return Promise.reject(new Error('viewport_disposed'));
     return this.adapter.call('setContainerMode', mode);
   }
 }

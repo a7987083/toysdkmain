@@ -3,10 +3,12 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import ts from 'typescript';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 const sdkUrl = 'https://s1.hdslb.com/bfs/seed/toy/app/sdk/toy-sdk.js';
 const documentUrl = 'https://www.bilibili.com/toy/publish/sdk';
-const repositoryUrl = 'https://api.github.com/repos/bilibili/toy/commits/main';
+const repositoryUrl = 'https://github.com/bilibili/toy.git';
 const cliVersionUrl = 'https://boss.hdslb.com/toy-cli/toy/latest/VERSION';
 
 const sha256 = value => createHash('sha256').update(value).digest('hex');
@@ -175,32 +177,36 @@ async function main() {
     if (bytes.length > 2 * 1024 * 1024) throw new Error('Offline SDK exceeds size limit');
     candidate.sdk = { url: sdkUrl, source: 'offline', ...inspectSdk(bytes) };
   } else {
-    const sources = await Promise.allSettled([
-      download(sdkUrl, 2 * 1024 * 1024), fetchDocument(),
-      download(repositoryUrl, 512 * 1024), download(cliVersionUrl, 4096),
-    ]);
-    const names = ['cdn', 'document', 'repository', 'cli'];
-    const failures = sources.flatMap((source, index) => source.status === 'rejected'
-      ? [{ source: names[index], error: String(source.reason) }] : []);
+    const inspectCli = async () => {
+      const version = textDecoder.decode((await download(cliVersionUrl,4096)).bytes).trim();
+      if (!/^v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(version)) throw new Error('Invalid CLI version');
+      const checksumUrl = new URL(`../releases/${version}/toy_linux_amd64.sha256`, cliVersionUrl).href;
+      const digest = textDecoder.decode((await download(checksumUrl,4096)).bytes).trim().split(/\s/)[0];
+      if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error('Invalid CLI digest');
+      return {url:cliVersionUrl,version,checksumUrl,linuxX64Sha256:digest};
+    };
+    const tasks = {
+      sdk: download(sdkUrl,2*1024*1024).then(sdk => ({url:sdkUrl,etag:sdk.etag,lastModified:sdk.lastModified,...inspectSdk(sdk.bytes)})),
+      document: fetchDocument(),
+      repository: promisify(execFile)('git',['ls-remote','--exit-code',repositoryUrl,'refs/heads/main'],{timeout:20000}).then(({stdout})=>{
+        const commit = stdout.match(/^([a-f0-9]{40})\s+refs\/heads\/main\s*$/)?.[1];
+        if (!commit) throw new Error('Unrecognized official Git ref');
+        return {url:repositoryUrl,commit};
+      }),
+      cli: inspectCli(),
+    };
+    const failures = [];
+    await Promise.all(Object.entries(tasks).map(async ([source, task]) => {
+      try { candidate[source] = await task; }
+      catch (error) { failures.push({source,error:String(error)}); }
+    }));
     if (failures.length) {
-      await mkdir(values.output, { recursive: true });
-      await writeFile(join(values.output, 'candidate.json'), JSON.stringify({checkedAt: candidate.checkedAt, failures}, null, 2));
+      candidate.failures = failures;
+      await mkdir(values.output,{recursive:true});
+      await writeFile(join(values.output,'candidate.json'),JSON.stringify(candidate,null,2));
+      await writeFile(join(values.output,'diff.json'),JSON.stringify({status:'incomplete',failures},null,2));
       throw new Error(JSON.stringify(failures));
     }
-    const [sdk, document, repository, cli] = sources.map(source => source.value);
-    candidate.sdk = { url: sdkUrl, etag: sdk.etag, lastModified: sdk.lastModified, ...inspectSdk(sdk.bytes) };
-    candidate.document = document;
-    const commit = JSON.parse(textDecoder.decode(repository.bytes)).sha;
-    const version = textDecoder.decode(cli.bytes).trim();
-    if (!/^[a-f0-9]{40}$/.test(commit) || !/^v?\d+\.\d+\.\d+(?:[-+][A-Za-z0-9.-]+)?$/.test(version)) {
-      throw new Error('Unrecognized official repository or CLI version');
-    }
-    candidate.repository = { url: repositoryUrl, commit };
-    const checksumUrl = new URL(`../releases/${version}/toy_linux_amd64.sha256`, cliVersionUrl).href;
-    const checksum = await download(checksumUrl, 4096);
-    const digest = textDecoder.decode(checksum.bytes).trim().split(/\s/)[0];
-    if (!/^[a-f0-9]{64}$/.test(digest)) throw new Error('Unrecognized official CLI archive checksum');
-    candidate.cli = { url: cliVersionUrl, version, checksumUrl, linuxX64Sha256: digest };
   }
 
   await mkdir(values.output, { recursive: true });

@@ -41,3 +41,7 @@ Initial typed contract subset, adapter, explicit isolated mock and regression te
 ## 0.4.2 候选
 
 0.4.1-dev.0 修复会话与真实在途写入竞态；0.4.2-dev.0 接入逐 API 核对、限流与内容安全处理、固定 Doctor 及 Vite 包消费端。 [验收与恢复说明](docs/repair-0.4.md)
+
+## 0.5.0 开发候选
+
+兼容旧 Adapter。新增 toy、createToyFacade、createToyGame 和 game-context 导入路径。监控按来源保存失败，使用只读 Git ref 查询官方提交。SDK 和 Lab 的 CI 产物附校验表。
