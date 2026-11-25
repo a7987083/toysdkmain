@@ -27,6 +27,9 @@ export class ToyRuntime {
 
   initialize(): Promise<ToyAdapter> {
     if (this.disposal) return this.disposal.then(() => this.initialize());
+    if (this.adapter?.diagnostics().disposed) {
+      return this.dispose().then(() => this.initialize());
+    }
     if (this.adapter) return Promise.resolve(this.adapter);
     if (this.pending) return this.pending;
     const controller = new AbortController();

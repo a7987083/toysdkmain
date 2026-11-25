@@ -8,9 +8,16 @@ export interface GameLayout extends Omit<ToyContainerState, 'changedFields'> {
 }
 
 export class GameViewport {
+  private readonly refreshers = new Set<() => Promise<void>>();
+
+  async refresh(): Promise<void> {
+    await Promise.all([...this.refreshers].map(refresh => refresh()));
+  }
+
   constructor(
     private readonly adapter: ToyAdapter,
     private readonly browser: BrowserViewport | null = globalThis.window ?? null,
+    private readonly visibility: Pick<Document, 'hidden' | 'addEventListener' | 'removeEventListener'> | null = globalThis.document ?? null,
   ) {}
 
   /** Observe host state when available, and use browser dimensions until the first host event. */
@@ -53,12 +60,30 @@ export class GameViewport {
       });
     } catch { /* Browser resize remains active on query-only hosts. */ }
     attaching = false;
-    void this.adapter.call('getContainerState').then(state => {
-      if (!eventSequence) publish(state);
-    }).catch(() => {});
+    let pending: Promise<void> | undefined;
+    const refresh = () => {
+      if (pending) return pending;
+      const sequence = eventSequence;
+      pending = this.adapter.call('getContainerState').then(state => {
+        if (sequence === eventSequence) publish(state);
+      }).catch(() => {
+        if (active && sequence === eventSequence) {
+          last = undefined;
+          browser?.addEventListener('resize', onResize);
+          onResize();
+        }
+      }).finally(() => { pending = undefined; });
+      return pending;
+    };
+    const visible = () => { if (!this.visibility?.hidden) void refresh(); };
+    this.visibility?.addEventListener('visibilitychange', visible);
+    this.refreshers.add(refresh);
+    void refresh();
     return () => {
       if (!active) return;
       active = false;
+      this.refreshers.delete(refresh);
+      this.visibility?.removeEventListener('visibilitychange', visible);
       browser?.removeEventListener('resize', onResize);
       offHost?.();
     };

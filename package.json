@@ -1,6 +1,6 @@
 {
   "name": "toy-game-kit",
-  "version": "0.4.2-dev.0",
+  "version": "0.4.3-dev.0",
   "private": true,
   "type": "module",
   "scripts": {

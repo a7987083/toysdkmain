@@ -67,6 +67,13 @@ const isEntry = (value: unknown): value is Entry =>
   && (!Object.hasOwn(value, 'sent') || (typeof (value as Entry).sent === 'string' && Object.hasOwn(value, 'next')));
 
 // Only this realm can witness settlement. Evicted and pre-reload IDs remain uncertain.
+function operationId(): string {
+  const source = globalThis.crypto;
+  if (typeof source?.randomUUID === 'function') return source.randomUUID();
+  if (typeof source?.getRandomValues !== 'function') throw new Error('secure_random_unavailable');
+  return Array.from(source.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
 const pendingWrites = new Set<string>();
 const settledWrites = new Set<string>();
 function settled(id: string): void {
@@ -213,6 +220,7 @@ export class GameStorage<T> {
           entries.set(key, { ...entry, conflict: raw });
           report.conflicts.push(key);
         } else {
+          this.protectVersion(raw);
           entries.set(key, { base: raw, next: entry.next });
           if (entry.next === null) deletes.push(key);
           else writes.set(key, entry.next);
@@ -222,7 +230,7 @@ export class GameStorage<T> {
       const send = async (group: Map<string, RawSave>, operation: () => Promise<void>, target: 'written' | 'deleted') => {
         if (!group.size) return;
         this.requireOpen();
-        const id = crypto.randomUUID();
+        const id = operationId();
         const staged = new Map(this.entries);
         for (const key of group.keys()) staged.set(key, { ...staged.get(key)!, sent: id });
         this.commit(staged);
@@ -302,7 +310,8 @@ export class GameStorage<T> {
       if (entry.sent && !settledWrites.has(entry.sent) && !options.acceptLateWriteRisk) throw new Error('save_write_unverified');
       if (keep === 'cloud') this.updateBase(entries, key, entry.conflict);
       else {
-        if (entry.next !== null) this.protectVersion(entry.conflict);
+        this.protectVersion(entry.conflict);
+        this.protectVersion(entry.base);
         entries.set(key, { base: entry.conflict, next: entry.next });
       }
       this.commit(entries);
@@ -327,7 +336,9 @@ export class GameStorage<T> {
     this.remoteKey(key);
     const entries = new Map(this.entries);
     const entry = entries.get(key);
-    if (raw !== null) this.protectVersion(entry?.next ?? entry?.base);
+    this.protectVersion(entry?.base);
+    this.protectVersion(entry?.next);
+    this.protectVersion(entry?.conflict);
     if (this.cloud) entries.set(key, { ...entry, base: entry?.base ?? null, next: raw });
     else this.updateBase(entries, key, raw);
     this.commit(entries);

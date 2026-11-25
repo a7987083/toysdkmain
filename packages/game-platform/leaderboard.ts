@@ -10,12 +10,42 @@ export interface SettlementOptions {
   storage: Pick<Storage, 'getItem' | 'setItem'>;
   checkSession?: () => void;
   retentionMs?: number;
+  readTtlMs?: number;
   locks?: Pick<LockManager, 'request'>;
 }
 
+class ReadCache<T> {
+  private readonly values = new Map<string, { value: T; expires: number }>();
+  private readonly pending = new Map<string, Promise<T>>();
+
+  state(key: string) {
+    const entry = this.values.get(key);
+    return entry ? performance.now() < entry.expires ? 'fresh' : 'expired' : 'missing';
+  }
+
+  read(key: string, ttl: number, refresh: boolean, request: () => Promise<T>): Promise<T> {
+    const pending = this.pending.get(key);
+    if (pending) return pending;
+    const entry = this.values.get(key);
+    if (!refresh && entry && performance.now() < entry.expires) return Promise.resolve(structuredClone(entry.value));
+    const result = request().then(value => {
+      if (ttl && this.pending.get(key) === result) {
+        if (this.values.size >= 256) this.values.delete(this.values.keys().next().value!);
+        this.values.set(key, {value: structuredClone(value), expires: performance.now() + ttl});
+      }
+      return value;
+    }).finally(() => { if (this.pending.get(key) === result) this.pending.delete(key); });
+    this.pending.set(key,result);
+    return result;
+  }
+
+  clear() { this.values.clear(); this.pending.clear(); }
+}
+
 export class GameLeaderboard {
-  private readonly lists = new Map<string, ReturnType<ToyAdapter['ranks']>>();
-  private readonly personal = new Map<string, ReturnType<ToyAdapter['myRank']>>();
+  private readonly lists = new ReadCache<Awaited<ReturnType<ToyAdapter['ranks']>>>();
+  private readonly personal = new ReadCache<Awaited<ReturnType<ToyAdapter['myRank']>>>();
+  private readonly ttl: number;
   private receipts = new Map<string, Receipt>();
   private readonly inFlight = new Map<string, { score: number; result: Promise<{ score: number }> }>();
   private readonly key?: string;
@@ -23,6 +53,8 @@ export class GameLeaderboard {
 
   constructor(private readonly adapter: ToyAdapter, private readonly board: Board = 1, private readonly options?: SettlementOptions) {
     validateRank({ board });
+    this.ttl = options?.readTtlMs ?? 0;
+    if (!Number.isSafeInteger(this.ttl) || this.ttl < 0 || this.ttl > 86400000) throw new RangeError('invalid_rank_ttl');
     this.retention = options?.retentionMs ?? 7 * 86_400_000;
     if (options) {
       if (!options.gameKey || !options.playerKey || !Number.isSafeInteger(this.retention) || this.retention < 1) {
@@ -38,31 +70,30 @@ export class GameLeaderboard {
     return new GameLeaderboard(adapter, board, { ...options, playerKey: session.cacheIdentity(), checkSession: session.scope() });
   }
 
-  list(options: Omit<RankQuery, 'board'> & { limit?: number } = {}) {
+  list(options: Omit<RankQuery, 'board'> & { limit?: number } = {}, policy: { refresh?: boolean } = {}) {
     this.options?.checkSession?.();
-    const key = JSON.stringify([options.period ?? 'all', options.limit]);
-    const pending = this.lists.get(key);
-    if (pending) return pending;
-    const result = this.adapter.ranks({ ...options, board: this.board }).then(rows => {
+    return this.lists.read(JSON.stringify([options.period ?? 'all', options.limit]), this.ttl, !!policy.refresh, async () => {
+      const rows = await this.adapter.ranks({ ...options, board: this.board });
       this.options?.checkSession?.();
       return rows;
-    }).finally(() => this.lists.delete(key));
-    this.lists.set(key, result);
-    return result;
+    });
   }
 
-  async mine(period?: RankQuery['period']) {
+  async mine(period?: RankQuery['period'], policy: { refresh?: boolean } = {}) {
     this.options?.checkSession?.();
-    const key = period ?? 'all';
-    const pending = this.personal.get(key);
-    if (pending) return pending;
-    const result = this.adapter.myRank({ period, board: this.board }).then(rank => {
+    return this.personal.read(period ?? 'all', this.ttl, !!policy.refresh, async () => {
+      const rank = await this.adapter.myRank({ period, board: this.board });
       this.options?.checkSession?.();
       return rank;
-    }).finally(() => this.personal.delete(key));
-    this.personal.set(key, result);
-    return result;
+    });
   }
+
+  listCacheState(options: Omit<RankQuery, 'board'> & { limit?: number } = {}) {
+    this.options?.checkSession?.();
+    return this.lists.state(JSON.stringify([options.period ?? 'all', options.limit]));
+  }
+
+  clearReadCache() { this.lists.clear(); this.personal.clear(); }
 
   diagnostics() {
     this.options?.checkSession?.();
@@ -97,6 +128,7 @@ export class GameLeaderboard {
       try {
         const result = await this.adapter.submit(score, this.board);
         this.options?.checkSession?.();
+        this.clearReadCache();
         this.store(id, { score, at, state: 'confirmed', confirmedScore: result.score });
         return result;
       } catch (error) {
