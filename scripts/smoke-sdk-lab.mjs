@@ -32,26 +32,31 @@ await once(server, 'listening');
 const url = `http://127.0.0.1:${server.address().port}${prefix}`;
 const browser = spawn(process.env.CHROME_BIN ?? 'google-chrome', [
   '--headless=new', '--no-sandbox', '--disable-dev-shm-usage', '--disable-background-networking',
+  '--no-first-run', '--no-default-browser-check', '--disable-gpu',
   '--no-proxy-server', '--host-resolver-rules=MAP s1.hdslb.com ~NOTFOUND', '--remote-debugging-port=0',
-  '--user-data-dir=' + profile, url,
+  '--user-data-dir=' + profile, 'about:blank',
 ], { stdio: ['ignore', 'ignore', 'pipe'] });
 let browserError = '';
 let output = '';
+let debugPort;
 browser.on('error', error => { browserError = error.message; });
-browser.stderr.on('data', chunk => { output = (output + chunk).slice(-3000); });
+browser.stderr.on('data', chunk => {
+  output = (output + chunk).slice(-6000);
+  debugPort ??= output.match(/DevTools listening on ws:\/\/127\.0\.0\.1:(\d+)/)?.[1];
+});
 let socket;
 try {
   let page;
-  for (let retry = 0; retry < 100 && !page; retry++) {
+  for (let retry = 0; retry < 300 && !page; retry++) {
     await delay(100);
     if (browserError || browser.exitCode !== null) throw new Error(browserError || output);
     try {
-      const [port] = (await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).split('\n');
-      const response = await fetch(`http://127.0.0.1:${port}/json/list`);
+      const port = debugPort ?? (await readFile(join(profile, 'DevToolsActivePort'), 'utf8')).split('\n')[0];
+      const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(1000) });
       page = (await response.json()).find(target => target.type === 'page');
     } catch {}
   }
-  assert.ok(page);
+  assert.ok(page, 'Chromium exposed no page target: ' + output);
   socket = new WebSocket(page.webSocketDebuggerUrl);
   await once(socket, 'open');
   let id = 0;
@@ -87,6 +92,7 @@ try {
     throw new Error('Timed out: '+expression);
   }
   await send('Runtime.enable');
+  await send('Page.navigate', { url });
   await until('document.querySelectorAll("#methods button").length === 37');
   assert.equal(await evaluate('document.querySelector("#run").disabled'), true);
   await evaluate('document.querySelector("#mode").click()');
