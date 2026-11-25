@@ -45,3 +45,7 @@ Initial typed contract subset, adapter, explicit isolated mock and regression te
 ## 0.5.0 开发候选
 
 兼容旧 Adapter。新增 toy、createToyFacade、createToyGame 和 game-context 导入路径。监控按来源保存失败，使用只读 Git ref 查询官方提交。SDK 和 Lab 的 CI 产物附校验表。
+
+## 0.6.0 开发候选
+
+新增独立 vanilla-ts 贪吃蛇和 Phaser 点击游戏工程生成器、锁定包验证、游戏回归场景、Lab Mock 账号与故障控制。正式包和显式 Mock 构建分离。

@@ -21,3 +21,7 @@ B站实机环境的授权、媒体、充电和预览行为尚未验证。已有�
 ## 0.4.2 候选
 
 从 dev 的 0.4.2-dev.0 继续。运行 npm ci --ignore-scripts、npm test，产物和消费端命令见 CI。实机验收优先覆盖账号切换、存档迟到回包、真实 Web Locks、充电、旋转、媒体及审核。 [验收与恢复说明](docs/repair-0.4.md)
+
+## 0.6.0 开发候选
+
+基线为 bd085188。阶段 A 的远端提交 af04afda，阶段 B 的远端提交 bfe288a4。模板与技能包见 docs/templates.md、skills/toy-game-kit/。本地测试及独立安装按 CI 执行。每次安装独立模板应使用本版本锁文件匹配的 TGZ。新版本正式发布、main 监控、专用 Toy 及设备验收待授权。SHA256SUMS 记录同次打包产物，工作流结果按提交查询。

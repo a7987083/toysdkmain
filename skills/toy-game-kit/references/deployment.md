@@ -1,0 +1,1 @@
+用 scripts/create-game.mjs 从验证过 SHA 的 TGZ 创建工程。运行 npm ci、npm test、npm run build、npm run pack；仅交付 game.zip。检查子路径、刷新、权限降级，用固定版本 Doctor 验实际 ZIP。保留 WARN 详情。使用 toy --help-json 动态检查 create/update 参数；预览和审核的授权、指纹及元信息记录步骤见 docs/game-context.md。禁止转发自由参数、跳过确认或让 CI 自动上传。

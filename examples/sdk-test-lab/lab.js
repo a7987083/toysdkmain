@@ -2,7 +2,7 @@ import { ToyRuntime } from './kit/sdk-runtime/index.js';
 import { ToySession } from './kit/sdk-session/index.js';
 import { GameStorage, toyCloud } from './kit/game-storage/index.js';
 import { promiseMethods, subscriptionMethods } from './kit/sdk-contract/index.js';
-import { MockSDK, MockStore } from './kit/sdk-mock/index.js';
+import { MockSDK, MockStore, withMockFaults } from './kit/sdk-mock/index.js';
 
 const byId = id => document.getElementById(id);
 const metadata = await fetch(new URL('./baseline.json', import.meta.url))
@@ -65,6 +65,7 @@ for (const id of ['device', 'client-version']) byId(id).addEventListener('change
   try { localStorage.setItem(deviceKey, JSON.stringify(deviceInfo())); } catch {}
 });
 let mockMode = false;
+let fixture;
 let selection = 'isSupport';
 let sourceEpoch = 0;
 let stream;
@@ -78,6 +79,7 @@ function updateButtons() {
   args.disabled = events.has(selection) || selection === 'stopMedia';
   probe.disabled = !adapter || probing;
   byId('profile').disabled = !adapter || running;
+  byId('mock-controls').disabled = !mockMode || !adapter || running;
   byId('scenario').disabled = !mockMode || !adapter || running;
   const metrics = adapter?.diagnostics();
   byId('runtime-state').textContent = [runtime?.state, playerSession?.current.status,
@@ -141,10 +143,18 @@ async function activate(useMock) {
   const previous = runtime;
   playerSession?.dispose();
   playerSession = undefined;
-  runtime = new ToyRuntime({ timeoutMs: 5000, ...(useMock ? {
-    sdk: new MockSDK(new MockStore(), 'sdk-lab', 'mock-player', new Set(), {
-      environment: 'app', simulatedIdentity: true, charge: { status: 'ok', data: { unlocked: false } },
-    }),
+  fixture = useMock ? new MockSDK(new MockStore(), 'sdk-lab', byId('mock-account').value, new Set(), {
+    environment: 'app', simulatedIdentity: true, charge: { status: 'ok', data: { unlocked: false } },
+  }) : undefined;
+  byId('mock-fault').value = '';
+  runtime = new ToyRuntime({ timeoutMs: 5000, ...(fixture ? {
+    sdk: withMockFaults(fixture, {setCloudStorage(proceed) {
+      const fault = byId('mock-fault').value;
+      byId('mock-fault').value = '';
+      if (fault === 'rate') throw {type:'http_error',code:307044};
+      if (fault === 'network') throw {type:'network_error'};
+      return proceed();
+    }}),
   } : {}) });
   const nextRuntime = runtime;
   adapter = undefined;
@@ -325,3 +335,6 @@ byId('scenario').addEventListener('click', async () => {
 document.addEventListener('visibilitychange', () => record('visibilitychange', document.visibilityState, performance.now()));
 select(selection);
 void activate(false);
+
+byId('mock-account').onchange = () => { if (mockMode && fixture) { fixture.switchPlayer(byId('mock-account').value); void playerSession?.refresh({supersede:true}); } };
+byId('mock-charge').onclick = () => { if (mockMode) fixture?.simulateChargeResult({status:'ok',data:{unlocked:true}}); };

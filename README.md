@@ -25,3 +25,5 @@ const data = await sdk.call('getCloudStorage');
 [游戏公共 SDK](docs/game-services.md)包含生命周期、版本化存档、排行榜结算和充电鉴权。使用 `npm pack` 可生成可安装的开发包。
 
 0.4 开发候选的初始化、会话、存档和诊断见 [稳定性迁移指南](docs/stability.md)。
+
+接入示例见 [Game Context](docs/game-context.md)，新建独立游戏见 [模板说明](docs/templates.md)，真实宿主验收见 [设备验收表](docs/device-acceptance.md)。

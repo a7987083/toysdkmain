@@ -46,6 +46,10 @@
           <button type="button" id="scenario">模拟存档冲突并恢复</button>
           <button type="button" id="retry">重新初始化 SDK</button>
         </div>
+        <fieldset id="mock-controls" disabled><legend>本地 Mock</legend>
+        <label>测试账号 <select id="mock-account"><option>player-a</option><option>player-b</option></select></label>
+        <label>下一次存档写入 <select id="mock-fault"><option value="">正常</option><option value="rate">限流</option><option value="network">断网</option></select></label>
+        <button id="mock-charge" type="button">模拟解锁权益</button></fieldset>
         <label for="device">测试环境</label>
         <select id="device">
           <option value="unknown">未记录</option>

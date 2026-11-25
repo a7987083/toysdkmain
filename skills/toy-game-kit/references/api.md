@@ -1,0 +1,1 @@
+使用 npm 包根导出的 toy、createToyGame 和独立 ToyRuntime。命名空间签名从打包后的 dist/game-context/facade.d.ts 读取。TS/JS 示例见 docs/game-context.md 和 templates/common/main.ts。相机与麦克风需手势；媒体用 stopMedia 释放。容器用 GameViewport.watch 取得 viewport 和 safeArea，退出时取消监听。只有收到宿主状态才确认旋转。adapter.telemetry.report() 仅导出有界元数据。

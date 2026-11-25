@@ -1,0 +1,20 @@
+{
+  "name": "toy-phaser",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "scripts": {
+    "dev:mock": "vite --mode mock",
+    "build": "tsc && vite build",
+    "test": "node --test test.mjs",
+    "pack": "cd dist && zip -qr -FS ../game.zip ."
+  },
+  "dependencies": {
+    "toy-game-kit": "file:vendor/toy-game-kit-0.6.0-dev.0.tgz",
+    "phaser": "3.90.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "8.3.8"
+  }
+}

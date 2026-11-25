@@ -18,7 +18,9 @@ const server = createServer(async (req, res) => {
   }
   try {
     const relative = path.slice(prefix.length);
-    const target = relative === 'vite/' ? 'vite-consumer/index.html'
+    const template = /^(vanilla-ts|phaser)\/(.*)$/.exec(relative);
+    const target = template ? 'templates/' + template[1] + '/' + (template[2] || 'index.html')
+      : relative === 'vite/' ? 'vite-consumer/index.html'
       : relative.startsWith('vite/') ? 'vite-consumer/' + relative.slice(5)
       : relative === 'consumer/' ? 'sdk-consumer/index.html'
       : relative.startsWith('consumer/') ? 'sdk-consumer/' + relative.slice('consumer/'.length)
@@ -141,6 +143,27 @@ try {
     await send('Page.reload', { ignoreCache: true });
     await until(`document.documentElement.dataset.consumer === "ready" && document.documentElement.dataset.navigation !== ${JSON.stringify(previous)}`);
     assert.deepEqual(exceptions, []);
+  }
+  if (process.argv.includes('--templates')) {
+    for (const kind of ['vanilla-ts', 'phaser']) {
+      await send('Page.navigate', {url:url+kind+'/#game'});
+      await until("document.querySelector('#status')?.textContent.includes('Mock')");
+      await evaluate("document.querySelector('#start').click()");
+      await until("document.querySelector('#status')?.textContent.includes('玩家')");
+      if (kind === 'vanilla-ts') {
+        await evaluate("[...document.querySelectorAll('#game button')].find(b=>b.textContent==='右').click()");
+        await until("document.querySelector('#status').textContent==='得分 1'");
+      } else {
+        await until("document.querySelector('#game canvas')?.width === 640");
+      }
+      await evaluate("document.querySelector('#save').click()");
+      await until("document.querySelector('#status').textContent==='已保存'");
+      await evaluate("document.querySelector('#finish').click()");
+      await until("document.querySelector('#status').textContent==='已结算'");
+      await send('Page.reload', {ignoreCache:true});
+      await until("document.querySelector('#status')?.textContent.includes('Mock')");
+      assert.deepEqual(exceptions, []);
+    }
   }
   console.log('Chromium smoke passed: 37 methods, explicit Mock, storage, event subscription, 390px mobile layout');
 } finally {

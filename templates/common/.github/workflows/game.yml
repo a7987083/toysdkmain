@@ -1,0 +1,17 @@
+name: Game package
+on: [push, pull_request]
+permissions: {contents: read}
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with: {persist-credentials: false}
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: '24'}
+      - run: npm ci --ignore-scripts
+      - run: npm test && npm run build && npm run pack
+      - run: |
+          curl -fsSL https://raw.githubusercontent.com/bilibili/toy/f418536cc463ad598a775bc1ad6cfb0505905ab7/skills/toy/scripts/toy_doctor.py -o "$RUNNER_TEMP/toy_doctor.py"
+          echo "cbbf1244fff1179cfa48272cddb2cbcbd870da73d5fff1c5f30720231d6eeb0c  $RUNNER_TEMP/toy_doctor.py" | sha256sum -c -
+          python3 "$RUNNER_TEMP/toy_doctor.py" game.zip

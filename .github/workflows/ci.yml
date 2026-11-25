@@ -48,16 +48,22 @@ jobs:
           tar -xzf ../../dist/npm/*.tgz --strip-components=1 -C node_modules/toy-game-kit
           node prepare.mjs
           ./node_modules/.bin/vite build
+      - name: Build standalone game templates
+        run: sh scripts/build-templates.sh dist/npm/*.tgz
       - name: Inspect built artifacts with pinned official Doctor
         run: |
           curl --fail --silent --show-error --location https://raw.githubusercontent.com/bilibili/toy/f418536cc463ad598a775bc1ad6cfb0505905ab7/skills/toy/scripts/toy_doctor.py -o "$RUNNER_TEMP/toy_doctor.py"
-          sh scripts/preflight.sh "$RUNNER_TEMP/toy_doctor.py"
+          set -o pipefail
+          sh scripts/preflight.sh "$RUNNER_TEMP/toy_doctor.py" | tee dist/doctor-report.txt
       - name: Verify Lab and installed SDK in Chromium
-        run: node scripts/smoke-sdk-lab.mjs --consumer
+        run: node scripts/smoke-sdk-lab.mjs --consumer --templates
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: toy-game-kit-sdk
           path: |
             dist/npm/*.tgz
             dist/SHA256SUMS
+            dist/doctor-report.txt
+            dist/vanilla-ts.zip
+            dist/phaser.zip
           if-no-files-found: error

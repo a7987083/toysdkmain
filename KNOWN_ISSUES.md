@@ -13,3 +13,5 @@
 ## 0.4.2 候选
 
 当前在线声明仅列 36 个方法；历史 getAuthorVideoRange 通过 Adapter 返回 undocumented。跨设备存档缺少 CAS，刷新前的未知请求不能可靠确认。真实 WebView、榜单周期和账号审批仍待核验。 [验收与恢复说明](docs/repair-0.4.md)
+
+0.6.0 候选的 Phaser 动态块超过 Vite 默认体积提示阈值；低端手机加载表现待验证。模板需 Web Locks 才能安全使用其默认 localStorage 策略。旧 WebView 可在游戏获得用户同意后选择显式内存存档。目标设备最低版本仍待确认。

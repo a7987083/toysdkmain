@@ -1,15 +1,15 @@
 {
-  "version": "0.4.2-dev.0",
+  "version": "0.6.0-dev.0",
   "branch": "dev",
-  "stage": "repair-candidate",
-  "baselineCommit": "32dbb57d47186d8ede5da73a289c875c2c8be571",
+  "stage": "template-candidate",
+  "baselineCommit": "bd085188c08114ccd568705ddaf30a83d28e5d42",
   "officialSdk": "0.5.5",
   "publicMethods": 36,
   "build": "passed",
   "test": "passed",
   "ci": {
-    "lastVerifiedCommit": "32dbb57d47186d8ede5da73a289c875c2c8be571",
-    "run": 45652560736,
+    "lastVerifiedCommit": "bd085188c08114ccd568705ddaf30a83d28e5d42",
+    "run": 45657374498,
     "result": "success",
     "candidate": "consult Actions for exact HEAD"
   },
@@ -23,7 +23,7 @@
     "charge",
     "viewport"
   ],
-  "baselineActionsRun": 45652560736,
+  "baselineActionsRun": 45657374498,
   "historicalMethods": 37,
-  "localTests": 55
+  "localTests": 62
 }
