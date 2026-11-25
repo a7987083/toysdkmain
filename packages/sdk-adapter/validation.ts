@@ -1,4 +1,4 @@
-import { validateItems, validateKey, validateRank, validateScore, type KV, type PromiseMethod } from '../sdk-contract/index.js';
+import { promiseMethods, subscriptionMethods, validateItems, validateKey, validateRank, validateScore, type KV, type PromiseMethod } from '../sdk-contract/index.js';
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -13,10 +13,27 @@ function integer(value: unknown, min: number, max = Number.MAX_SAFE_INTEGER): bo
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= min && value <= max;
 }
 
+const counts = {
+  isSupport: [1, 1], navigate: [1, 1], saveImageToAlbum: [1, 1], share: [1, 1],
+  getQrCode: [0, 1], sharePicture: [1, 1], closeBrowser: [0, 0], getUserProfile: [0, 0],
+  getAuthorProfile: [0, 0], getAuthorVideos: [1, 1], getAuthorVideoRange: [0, 1],
+  getAuthorRelation: [0, 0], getVideoUserActions: [1, 1], getAnnualReport: [1, 1],
+  getChargeUnlock: [1, 1], openChargePanel: [1, 1], setCloudStorage: [1, 1],
+  getCloudStorage: [0, 1], removeCloudStorage: [1, 1], setSharedStorage: [2, 2],
+  getSharedStorage: [1, 2], removeSharedStorage: [2, 2], submitScore: [1, 1],
+  getRankList: [0, 1], getMyRank: [0, 1], requestCamera: [0, 1], requestMicrophone: [0, 0],
+  stopMedia: [1, 1], getContainerState: [0, 0], setContainerMode: [1, 1],
+  getPlayerState: [0, 0], setPlayerState: [1, 1], checkInputSafety: [1, 1],
+} satisfies Record<PromiseMethod, [number, number]>;
+
+const capabilities = new Set<string>([...promiseMethods, ...subscriptionMethods]);
+const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+const dimension = (value: unknown) => finite(value) && value >= 0;
+
 function validateKeys(value: unknown, optional: boolean): void {
   if (value === undefined && optional) return;
   expect(Array.isArray(value), 'keys');
-  value.forEach(validateKey);
+  for (const key of value) validateKey(key);
 }
 
 function validateVideoRefs(value: unknown): void {
@@ -36,9 +53,14 @@ function validatePath(value: unknown): void {
 }
 
 export function validateRequest(method: PromiseMethod, args: readonly unknown[]): void {
+  const [min, max] = counts[method];
+  expect(args.length >= min && args.length <= max, 'argument count');
   const [first, second] = args;
   const req = record(first);
   switch (method) {
+    case 'isSupport':
+      expect(typeof first === 'string' && capabilities.has(first), 'ability');
+      return;
     case 'getCloudStorage': return validateKeys(first, true);
     case 'removeCloudStorage': return validateKeys(first, false);
     case 'setCloudStorage': return validateItems(first as KV);
@@ -58,7 +80,9 @@ export function validateRequest(method: PromiseMethod, args: readonly unknown[])
       return;
     case 'navigate':
       expect(req && typeof req.id === 'string' && req.id.length
-        && ['video', 'space', 'search', 'opus', 'tribee', 'toy'].includes(String(req.type)), 'navigation');
+        && ['video', 'space', 'search', 'opus', 'tribee', 'toy'].includes(req.type as string), 'navigation');
+      expect(req.extra === undefined || !!record(req.extra)
+        && Object.values(req.extra as Record<string, unknown>).every(value => typeof value === 'string'), 'extra');
       return;
     case 'share': return validatePath(req?.path);
     case 'getQrCode':
@@ -68,7 +92,10 @@ export function validateRequest(method: PromiseMethod, args: readonly unknown[])
       return;
     case 'sharePicture':
     case 'saveImageToAlbum':
-      expect(req && ((typeof req.url === 'string' && req.url.length > 0)
+      expect(req && (req.url === undefined || typeof req.url === 'string')
+        && (req.base64Data === undefined || typeof req.base64Data === 'string')
+        && (method !== 'saveImageToAlbum' || req.hintMsg === undefined || typeof req.hintMsg === 'string')
+        && ((typeof req.url === 'string' && req.url.length > 0)
         || (typeof req.base64Data === 'string' && req.base64Data.length > 0
           && req.base64Data.length <= (method === 'sharePicture' ? 2 : 5) * 1024 * 1024)), 'image');
       return;
@@ -77,7 +104,7 @@ export function validateRequest(method: PromiseMethod, args: readonly unknown[])
       expect(req && (req.aids === undefined) !== (req.videos === undefined), 'aids or videos');
       if (req.aids === undefined) return validateVideoRefs(req.videos);
       expect(Array.isArray(req.aids) && req.aids.length >= 1 && req.aids.length <= 50
-        && req.aids.every(aid => integer(aid, 1)), 'aids');
+        && [...req.aids].every(aid => integer(aid, 1)), 'aids');
       return;
     case 'getAuthorVideoRange':
       expect(first === undefined || req, 'request');
@@ -102,7 +129,7 @@ export function validateRequest(method: PromiseMethod, args: readonly unknown[])
       return;
     case 'setContainerMode':
       expect(req && (req.orientation !== undefined || req.immersive !== undefined)
-        && (req.orientation === undefined || ['portrait', 'landscape', 'auto'].includes(String(req.orientation)))
+        && (req.orientation === undefined || ['portrait', 'landscape', 'auto'].includes(req.orientation as string))
         && (req.immersive === undefined || typeof req.immersive === 'boolean'), 'container mode');
       return;
     case 'setPlayerState':
@@ -130,9 +157,9 @@ function videoSummary(value: unknown): boolean {
   const stat = record(item?.stat);
   return !!item && integer(item.aid, 1) && typeof item.bvid === 'string'
     && typeof item.title === 'string' && typeof item.cover === 'string'
-    && typeof item.publishTime === 'number' && typeof item.duration === 'number'
+    && dimension(item.publishTime) && dimension(item.duration)
     && !!stat && ['view', 'like', 'coin', 'favorite', 'share', 'comment', 'danmaku']
-      .every(key => typeof stat[key] === 'number');
+      .every(key => dimension(stat[key]));
 }
 
 export function validCharge(value: unknown): boolean {
@@ -177,12 +204,34 @@ export function validResponse(method: PromiseMethod, value: unknown): boolean {
         && (item.data === undefined || videoSummary(item.data)));
     case 'getAnnualReport': return typeof result?.watch_duration === 'number'
       && Array.isArray(result.hot_arch_list) && (result.target === null || !!record(result.target));
-    case 'getContainerState': return !!result && ['phone', 'tablet', 'desktop', 'unknown'].includes(String(result.deviceType))
-      && ['landscape', 'portrait'].includes(String(result.orientation)) && typeof result.immersive === 'boolean'
-      && !!record(result.viewport) && !!record(result.safeArea) && Array.isArray(result.changedFields);
+    case 'getContainerState': {
+      const viewport = record(result?.viewport);
+      const area = record(result?.safeArea);
+      return !!result && ['phone', 'tablet', 'desktop', 'unknown'].includes(result.deviceType as string)
+        && ['landscape', 'portrait'].includes(result.orientation as string) && typeof result.immersive === 'boolean'
+        && !!viewport && dimension(viewport.width) && dimension(viewport.height)
+        && !!area && ['top', 'right', 'bottom', 'left'].every(edge => dimension(area[edge]))
+        && Array.isArray(result.changedFields) && [...result.changedFields].every(field => typeof field === 'string');
+    }
     case 'getPlayerState': return !!result && integer(result.position, 0) && integer(result.duration, 0)
       && typeof result.playing === 'boolean' && typeof result.muted === 'boolean'
-      && typeof result.rate === 'number' && integer(result.timestamp, 0) && Array.isArray(result.changedFields);
-    default: return value === undefined;
+      && dimension(result.rate) && integer(result.timestamp, 0) && Array.isArray(result.changedFields);
+    case 'navigate':
+    case 'share':
+    case 'sharePicture':
+    case 'closeBrowser':
+    case 'openChargePanel':
+    case 'setCloudStorage':
+    case 'removeCloudStorage':
+    case 'setSharedStorage':
+    case 'removeSharedStorage':
+    case 'stopMedia':
+    case 'setContainerMode':
+    case 'setPlayerState': return value === undefined;
+    default: {
+      const unhandled: never = method;
+      void unhandled;
+      return false;
+    }
   }
 }

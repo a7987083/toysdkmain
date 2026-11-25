@@ -14,7 +14,8 @@ type Fixtures = Partial<Pick<ToySDK,
   'getAuthorProfile' | 'getAuthorVideos' | 'getAuthorVideoRange' | 'getAuthorRelation' |
   'getVideoUserActions' | 'getAnnualReport' | 'getQrCode' | 'requestCamera' | 'requestMicrophone'>>;
 
-interface MockOptions {
+export interface MockOptions {
+  simulatedIdentity?: boolean;
   environment?: 'app' | 'web' | 'preview' | 'external';
   consent?: boolean;
   clock?: () => number;
@@ -68,7 +69,7 @@ export class MockSDK implements ToySDK {
   constructor(
     private readonly store: MockStore,
     private readonly toy: string,
-    private readonly player: string | null,
+    private player: string | null,
     private readonly allowedShared: ReadonlySet<string> = new Set(),
     private readonly options: MockOptions = {},
   ) {
@@ -93,6 +94,8 @@ export class MockSDK implements ToySDK {
     if (failure === 'pending') await new Promise<never>(() => {});
     else if (failure) fail(failure.type, failure.code);
   }
+
+  switchPlayer(player: string | null): void { this.player = player; }
 
   private user(requireConsent = false): string {
     if (!this.player) fail('not_logged_in');
@@ -141,7 +144,8 @@ export class MockSDK implements ToySDK {
 
   async getUserProfile() {
     await this.check('getUserProfile');
-    return { avatar: '', nickname: this.user(true) };
+    const nickname = this.user(true);
+    return { avatar: '', nickname, ...(this.options.simulatedIdentity ? { toyOpenId: 'mock:' + nickname } : {}) };
   }
 
   async getCloudStorage(keys?: string[]) { await this.check('getCloudStorage'); return this.read('toy:' + this.toy, keys); }
@@ -358,4 +362,20 @@ export class MockSDK implements ToySDK {
     this.user();
     return this.options.safety ?? { status: 'unavailable', passed: false };
   }
+}
+
+
+/** An explicit test wrapper. A fault can invoke the real mock operation before failing to model partial success. */
+export function withMockFaults(sdk: Partial<ToySDK>, faults: Partial<Record<keyof ToySDK, (proceed: () => unknown, args: unknown[]) => unknown>>): Partial<ToySDK> {
+  return new Proxy(sdk, {
+    get(target, name, receiver) {
+      const method = Reflect.get(target, name, receiver);
+      if (typeof method !== 'function') return method;
+      const fault = typeof name === 'string' && knownMethods.has(name) ? faults[name as keyof ToySDK] : undefined;
+      return (...args: unknown[]) => {
+        const proceed = () => Reflect.apply(method, target, args);
+        return fault ? fault(proceed, args) : proceed();
+      };
+    },
+  });
 }

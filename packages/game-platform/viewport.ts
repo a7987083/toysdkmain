@@ -30,19 +30,31 @@ export class GameViewport {
     };
     onResize();
     browser?.addEventListener('resize', onResize);
+    let observedEvent = false;
+    let last: string | undefined;
+    const publish = (state: ToyContainerState) => {
+      if (!active) return;
+      browser?.removeEventListener('resize', onResize);
+      const { deviceType, viewport, orientation, immersive, safeArea } = state;
+      const layout = { source: 'toy' as const, deviceType, viewport, orientation, immersive, safeArea };
+      const signature = JSON.stringify(layout);
+      if (signature === last) return;
+      last = signature;
+      listener(layout);
+    };
     const attach = async () => {
       if (!(await this.adapter.supports('onContainerChange')) || !active) return;
       offHost = this.adapter.subscribe('onContainerChange', state => {
-        if (!active) return;
-        browser?.removeEventListener('resize', onResize);
-        listener({
-          source: 'toy', deviceType: state.deviceType, viewport: state.viewport,
-          orientation: state.orientation, immersive: state.immersive, safeArea: state.safeArea,
-        });
+        observedEvent = true;
+        publish(state);
       });
       if (!active) offHost();
     };
-    void attach().catch(() => {});
+    const subscription = attach().catch(() => {});
+    void this.adapter.call('getContainerState').then(async state => {
+      await subscription;
+      if (!observedEvent) publish(state);
+    }).catch(() => {});
     return () => {
       if (!active) return;
       active = false;
@@ -59,7 +71,7 @@ export class GameViewport {
 
 export function applySafeArea(style: Pick<CSSStyleDeclaration, 'setProperty'>, layout: GameLayout): void {
   for (const edge of ['top', 'right', 'bottom', 'left'] as const) {
-    const value = layout.source === 'toy' ? `${layout.safeArea[edge]}px` : `env(safe-area-inset-${edge}, 0px)`;
+    const value = layout.source === 'toy' && Number.isFinite(layout.safeArea[edge]) && layout.safeArea[edge] >= 0 ? `${layout.safeArea[edge]}px` : `env(safe-area-inset-${edge}, 0px)`;
     style.setProperty(`--toy-safe-area-${edge}`, value);
   }
 }

@@ -1,5 +1,7 @@
 import type { ToyAdapter } from '../sdk-adapter/index.js';
 
+import type { ToySession } from '../sdk-session/index.js';
+
 export type ChargeState = 'unknown' | 'checking' | 'locked' | 'unlocked' | 'unavailable';
 
 type VisibilitySource = Pick<Document, 'hidden' | 'addEventListener' | 'removeEventListener'>;
@@ -10,9 +12,17 @@ export class ChargeAccess {
   private generation = 0;
   private disposed = false;
   private unwatch?: () => void;
+  private offSession?: () => void;
+  private pending?: Promise<ChargeState>;
 
-  constructor(private readonly adapter: ToyAdapter, private readonly minPrice = 1200) {
+  constructor(private readonly adapter: ToyAdapter, private readonly minPrice = 1200, private readonly session?: ToySession) {
     if (!Number.isSafeInteger(minPrice) || minPrice < 1200) throw new Error('invalid_charge_price');
+    this.offSession = session?.onChange(state => {
+      this.generation++;
+      this.pending = undefined;
+      this.transition('unknown');
+      if (state.status === 'user') void this.check();
+    });
   }
 
   get current(): ChargeState { return this.state; }
@@ -26,6 +36,7 @@ export class ChargeAccess {
 
   async refresh(): Promise<ChargeState> {
     this.requireActive();
+    if (this.session && this.session.current.status !== 'user') return 'unavailable';
     const generation = ++this.generation;
     this.transition('checking');
     let state: ChargeState = 'unavailable';
@@ -39,6 +50,15 @@ export class ChargeAccess {
     return this.current;
   }
 
+  /** Coalesce automatic rechecks. Explicit refresh remains able to supersede an earlier request. */
+  check(): Promise<ChargeState> {
+    if (!this.pending) {
+      const result = this.refresh().finally(() => { if (this.pending === result) this.pending = undefined; });
+      this.pending = result;
+    }
+    return this.pending;
+  }
+
   /** Invoke directly from a user gesture. Completion confirms only that the panel opened. */
   async openPanel(): Promise<void> {
     this.requireActive();
@@ -49,12 +69,23 @@ export class ChargeAccess {
     this.requireActive();
     if (!visibility) throw new Error('visibility_unavailable');
     this.unwatch?.();
+    let offHost: (() => void) | undefined;
+    let active = true;
     const listener = () => {
-      if (!visibility.hidden && !this.disposed) void this.refresh();
+      if (!visibility.hidden && !this.disposed) void this.check();
     };
+    // The public event may exist even when the host omits it from its ability list.
+    try {
+      offHost = this.adapter.subscribe('onChargeUnlockChange', () => {
+        if (!this.disposed && active) void this.check();
+      });
+    } catch { /* Visibility remains the fallback. */ }
     const off = () => {
+      if (!active) return;
+      active = false;
       visibility.removeEventListener('visibilitychange', listener);
       if (this.unwatch === off) this.unwatch = undefined;
+      offHost?.();
     };
     visibility.addEventListener('visibilitychange', listener);
     this.unwatch = off;
@@ -65,8 +96,8 @@ export class ChargeAccess {
     if (this.disposed) return;
     this.disposed = true;
     this.generation++;
-    this.unwatch?.();
-    this.transition('unavailable');
+    this.offSession?.();
+    try { this.unwatch?.(); } finally { this.transition('unavailable'); }
   }
 
   private requireActive(): void {

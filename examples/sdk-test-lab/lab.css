@@ -43,3 +43,7 @@ pre { border: 1px solid var(--border); background: #101515; padding: 12px; borde
   nav { max-height: 158px; grid-template-columns: repeat(auto-fit, minmax(min(180px, 100%), 1fr)); }
   aside, .detail { padding: 12px; }
 }
+details { margin-top: 16px; }
+details .actions, details label { margin-top: 8px; }
+select { color: inherit; background: #121819; border: 1px solid var(--border); padding: 7px; }
+#runtime-state { color: var(--muted); }

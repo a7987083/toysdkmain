@@ -24,7 +24,6 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm test
       - run: node scripts/build-sdk-lab.mjs
-      - run: node scripts/smoke-sdk-lab.mjs
       - name: Package SDK test lab
         run: |
           cd dist/sdk-test-lab
@@ -38,6 +37,10 @@ jobs:
         run: |
           mkdir -p dist/npm
           npm pack --ignore-scripts --pack-destination dist/npm
+      - name: Verify packaged SDK in an independent game
+        run: node scripts/smoke-sdk-consumer.mjs dist/npm/*.tgz
+      - name: Verify Lab and installed SDK in Chromium
+        run: node scripts/smoke-sdk-lab.mjs --consumer
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: toy-game-kit-sdk

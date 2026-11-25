@@ -17,7 +17,11 @@ const server = createServer(async (req, res) => {
     return;
   }
   try {
-    const body = await readFile(new URL('../dist/sdk-test-lab/' + path.slice(prefix.length), import.meta.url));
+    const relative = path.slice(prefix.length);
+    const target = relative === 'consumer/' ? 'sdk-consumer/index.html'
+      : relative.startsWith('consumer/') ? 'sdk-consumer/' + relative.slice('consumer/'.length)
+      : 'sdk-test-lab/' + relative;
+    const body = await readFile(new URL('../dist/' + target, import.meta.url));
     res.writeHead(200, { 'Content-Type': mime[extname(path)] ?? 'application/octet-stream' }).end(body);
   } catch {
     res.writeHead(404).end();
@@ -83,6 +87,7 @@ try {
   }
   await send('Runtime.enable');
   await until('document.querySelectorAll("#methods button").length === 37');
+  assert.equal(await evaluate('document.querySelector("#run").disabled'), true);
   await evaluate('document.querySelector("#mode").click()');
   await until('document.querySelector("#session").textContent.includes("Mock") && !document.querySelector("#run").disabled');
   const select = name => evaluate(`[...document.querySelectorAll("#methods button")].find(b=>b.firstChild.textContent===${JSON.stringify(name)}).click()`);
@@ -97,9 +102,30 @@ try {
   await until('document.querySelector("#result").textContent.includes("viewport")');
   await evaluate('document.querySelector("#unsubscribe").click()');
   await until('document.querySelector("#result").textContent.includes("unsubscribed")');
+  await evaluate('document.querySelector("#profile").click()');
+  await until('document.querySelector("#runtime-state").textContent.includes("user")');
+  await evaluate('document.querySelector("#scenario").click()');
+  await until(`JSON.parse(document.querySelector('#result').textContent).result?.recovered === true`);
+  assert.equal(await evaluate('navigator.locks?.request instanceof Function'), true);
+  const race = await evaluate(`(async () => {
+    const { GameStorage } = await import('./kit/game-storage/index.js');
+    const config = { namespace: 'browser-smoke', schema: { version: 1, validate: value => typeof value === 'number' },
+      session: { mode: 'guest' }, cache: localStorage };
+    const a = new GameStorage(config);
+    const b = new GameStorage(config);
+    const results = await Promise.allSettled([a.put('one', 1), b.put('two', 2)]);
+    await Promise.all([a.close(), b.close()]);
+    return results.map(result => result.status === 'fulfilled' ? 'ok' : result.reason.type).sort();
+  })()`);
+  assert.deepEqual(race, ['cache_changed', 'ok']);
   await send('Emulation.setDeviceMetricsOverride', { width: 390, height: 844, deviceScaleFactor: 3, mobile: true });
   assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
   assert.deepEqual(exceptions, []);
+  if (process.argv.includes('--consumer')) {
+    await send('Page.navigate', { url: url + 'consumer/' });
+    await until('document.documentElement.dataset.consumer === "ready"');
+    assert.deepEqual(exceptions, []);
+  }
   console.log('Chromium smoke passed: 37 methods, explicit Mock, storage, event subscription, 390px mobile layout');
 } finally {
   socket?.close();

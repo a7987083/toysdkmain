@@ -4,3 +4,6 @@ export * from './sdk-mock/index.js';
 export * from './game-core/index.js';
 export * from './game-storage/index.js';
 export * from './game-platform/index.js';
+export * from './sdk-runtime/index.js';
+export * from './sdk-session/index.js';
+export * from './sdk-diagnostics/index.js';

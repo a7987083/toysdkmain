@@ -11,3 +11,9 @@ B站实机环境的授权、媒体、充电和预览行为尚未验证。已有�
 测试实验室在 `examples/sdk-test-lab/`。用 `npm run lab:build` 生成静态站点，SDK CI 附带可上传 ZIP。平台实测场景与记录方法见 [SDK 实验室](docs/sdk-test-lab.md)。
 
 公共 SDK 位于 `packages/game-core`、`packages/game-storage`、`packages/game-platform`，用法及事务边界见 [游戏公共 SDK](docs/game-services.md)。下一步覆盖统一输入并跑真实 Toy 验证。
+
+## 0.4.0-dev.0 稳定性工作
+
+基线为 `ab3f536`，上次通过的 [基线 Actions](https://github.com/a7987083/toysdkmain/actions/runs/45404952775)。本地基线 26 项测试通过。当前候选新增稳定性回归和 TGZ 消费端测试。实验环境的 Chromium 启动器缺少浏览器可执行文件，浏览器实测以 GitHub Actions 的 Chromium 步骤为准。上游 CDN 0.5.5 保持一致，在线声明差异见 [官方核对记录](docs/upstream-baseline.md)。
+
+新入口和行为边界见 [稳定性迁移指南](docs/stability.md)。下步在真实设备核对账号切换、Web Locks、权限和 SDK 容器行为。

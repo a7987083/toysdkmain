@@ -1,7 +1,8 @@
 import {
   type Board, type KV, type PromiseMethod, type RankQuery, type SubscriptionMethod, type ToySDK,
-  type Unsubscribe,
+  type Unsubscribe, promiseMethods, subscriptionMethods,
 } from '../sdk-contract/index.js';
+import { SdkDiagnostics } from '../sdk-diagnostics/index.js';
 import { validCharge, validResponse, validateRequest } from './validation.js';
 
 type ApiError = {
@@ -16,9 +17,16 @@ export class ToyKitError extends Error {
     readonly method?: keyof ToySDK,
     readonly code?: number,
     cause?: unknown,
+    readonly outcome?: 'unknown',
   ) {
     super(method ? `${type}: ${method}` : type, { cause });
     this.name = 'ToyKitError';
+  }
+
+  get category(): string {
+    if (this.code === 307044) return 'rate_limited';
+    if (['user_denied', 'no_permission', 'not_logged_in', 'age_restricted'].includes(this.type)) return 'permission_denied';
+    return this.type;
   }
 }
 
@@ -30,7 +38,8 @@ function normalize(reason: unknown, method: keyof ToySDK): ToyKitError {
   return new ToyKitError(type, method, typeof error?.code === 'number' ? error.code : undefined, reason);
 }
 
-interface AdapterOptions {
+export interface AdapterOptions {
+  diagnostics?: SdkDiagnostics;
   timeoutMs?: number;
   /** Optional ceiling for unsettled upstream requests, including timed-out requests. */
   maxPending?: number;
@@ -38,6 +47,11 @@ interface AdapterOptions {
 
 const getWindowSdk = () => (globalThis as typeof globalThis & { toy?: Partial<ToySDK> }).toy;
 const pause = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+const promises = new Set<string>(promiseMethods);
+const subscriptions = new Set<string>(subscriptionMethods);
+const writes = new Set<PromiseMethod>([
+  'setCloudStorage', 'removeCloudStorage', 'setSharedStorage', 'removeSharedStorage', 'submitScore',
+]);
 const retryableReads = new Set<PromiseMethod>(['getCloudStorage', 'getSharedStorage', 'getRankList', 'getMyRank']);
 
 export class ToyAdapter {
@@ -48,13 +62,19 @@ export class ToyAdapter {
   private readonly maxPending: number;
   private pending = 0;
   private disposed = false;
+  private readonly waiters = new Set<() => void>();
+  private readonly releasing = new WeakSet<MediaStream>();
+  private disposal?: Promise<void>;
+  private waiting = 0;
+  readonly telemetry: SdkDiagnostics;
 
   constructor(private readonly sdk: Partial<ToySDK>, options: AdapterOptions = {}) {
     if (!sdk) throw new ToyKitError('sdk_unavailable');
     this.timeoutMs = options.timeoutMs ?? 30_000;
-    this.maxPending = options.maxPending ?? Infinity;
-    if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs <= 0
-      || !(this.maxPending === Infinity || Number.isSafeInteger(this.maxPending) && this.maxPending > 0)) {
+    this.maxPending = options.maxPending ?? 16;
+    this.telemetry = options.diagnostics ?? new SdkDiagnostics();
+    if (!Number.isSafeInteger(this.timeoutMs) || this.timeoutMs <= 0 || this.timeoutMs > 0x7fffffff
+      || (!Number.isSafeInteger(this.maxPending) || this.maxPending < 1)) {
       throw new ToyKitError('invalid_param');
     }
   }
@@ -83,10 +103,12 @@ export class ToyAdapter {
       hasCapabilityProbe: typeof this.sdk.isSupport === 'function',
       disposed: this.disposed,
       pending: this.pending,
+      waiting: this.waiting,
     };
   }
 
   async supports(method: keyof ToySDK): Promise<boolean> {
+    if (!promises.has(method) && !subscriptions.has(method)) throw new ToyKitError('invalid_param');
     if (this.disposed) return false;
     if (typeof this.sdk[method] !== 'function') return false;
     if (method === 'isSupport') return true;
@@ -94,52 +116,103 @@ export class ToyAdapter {
   }
 
   call<K extends PromiseMethod>(method: K, ...args: Parameters<ToySDK[K]>): Promise<Awaited<ReturnType<ToySDK[K]>>>;
-  async call(method: PromiseMethod, ...args: unknown[]): Promise<unknown> {
+  call(method: PromiseMethod, ...args: unknown[]): Promise<unknown> {
+    return this.invoke(method, args);
+  }
+
+  /** The signal ends the caller's wait. The host may still execute an already submitted operation. */
+  callWithSignal<K extends PromiseMethod>(signal: AbortSignal, method: K, ...args: Parameters<ToySDK[K]>): Promise<Awaited<ReturnType<ToySDK[K]>>>;
+  callWithSignal(signal: AbortSignal, method: PromiseMethod, ...args: unknown[]): Promise<unknown> {
+    return this.invoke(method, args, signal);
+  }
+
+  private async invoke(method: PromiseMethod, args: unknown[], signal?: AbortSignal): Promise<unknown> {
+    if (!promises.has(method)) throw new ToyKitError('invalid_param');
+    const started = performance.now();
     let timer: ReturnType<typeof setTimeout> | undefined;
-    let timedOut = false;
+    let cancel: (() => void) | undefined;
+    let abort: (() => void) | undefined;
+    let abandoned = false;
+    let outcome: 'ok' | 'timeout' | 'rate_limited' | 'error' = 'ok';
+    let code: number | undefined;
     const acquiresStream = method === 'requestCamera' || method === 'requestMicrophone';
+    const mutation = writes.has(method) ? 'unknown' : undefined;
     try {
       if (this.disposed) throw new ToyKitError('disposed', method);
+      if (signal?.aborted) throw new ToyKitError('cancelled', method);
+      validateRequest(method, args);
+      if (method === 'stopMedia' && (this.streams.has(args[0] as MediaStream) || this.releasing.has(args[0] as MediaStream))) {
+        return await this.releaseStream(args[0] as MediaStream);
+      }
       const fn = this.sdk[method] as ((...args: unknown[]) => Promise<unknown>) | undefined;
       if (typeof fn !== 'function') throw new ToyKitError('unsupported', method);
-      if (method !== 'stopMedia' && this.pending >= this.maxPending) throw new ToyKitError('busy', method);
-      validateRequest(method, args);
+      if (this.pending >= this.maxPending) throw new ToyKitError('busy', method);
       const score = method === 'submitScore' ? args[0] as { board?: Board; score: number } : undefined;
       const submission = score ? `${score.board ?? 1}:${score.score}` : undefined;
       if (submission && this.scoreSubmissions.has(submission)) throw new ToyKitError('duplicate_pending', method);
-      // Start synchronously so the host can observe browser user activation.
-      const request = Promise.resolve(fn.apply(this.sdk, args));
       this.pending++;
       if (submission) this.scoreSubmissions.add(submission);
+      const settle = () => {
+        this.pending--;
+        if (submission) this.scoreSubmissions.delete(submission);
+      };
+      let request: Promise<unknown>;
+      try {
+        // Invoke inside the original gesture stack.
+        request = Promise.resolve(fn.apply(this.sdk, args));
+      } catch (error) {
+        settle();
+        throw error;
+      }
+      this.waiting++;
       const result = await Promise.race([
         request.then(value => {
-          if (!validResponse(method, value)) throw new ToyKitError('invalid_response', method);
-          if (acquiresStream && timedOut) void this.releaseStream(value as MediaStream);
+          if (!validResponse(method, value)) throw new ToyKitError('invalid_response', method, undefined, undefined, mutation);
+          if (acquiresStream && (abandoned || this.disposed)) this.cleanLateStream(value as MediaStream);
           return value;
-        }).finally(() => {
-          this.pending--;
-          if (submission) this.scoreSubmissions.delete(submission);
-        }),
+        }).finally(settle),
         new Promise<never>((_, reject) => {
+          cancel = () => {
+            abandoned = true;
+            reject(new ToyKitError('disposed', method, undefined, undefined, mutation));
+          };
+          this.waiters.add(cancel);
+          abort = () => {
+            abandoned = true;
+            reject(new ToyKitError('cancelled', method, undefined, undefined, mutation));
+          };
+          signal?.addEventListener('abort', abort, { once: true });
+          if (this.disposed) cancel();
+          else if (signal?.aborted) abort();
           timer = setTimeout(() => {
-            timedOut = true;
-            reject(new ToyKitError('timeout', method));
+            abandoned = true;
+            reject(new ToyKitError('timeout', method, undefined, undefined, mutation));
           }, this.timeoutMs);
         }),
       ]);
-      if (acquiresStream) {
-        if (this.disposed) {
-          void this.releaseStream(result as MediaStream);
-          throw new ToyKitError('disposed', method);
-        }
-        this.streams.add(result as MediaStream);
+      if (this.disposed) {
+        if (acquiresStream) this.cleanLateStream(result as MediaStream);
+        throw new ToyKitError('disposed', method, undefined, undefined, mutation);
       }
-      if (method === 'stopMedia') this.streams.delete(args[0] as MediaStream);
+      if (acquiresStream) this.streams.add(result as MediaStream);
       return result;
     } catch (reason) {
-      throw normalize(reason, method);
+      const error = normalize(reason, method);
+      code = error.code;
+      outcome = error.type === 'timeout' ? 'timeout' : code === 307044 ? 'rate_limited' : 'error';
+      if (mutation && (error.type === 'network_error' || error.type === 'bridge_unavailable' || error.type === 'sdk_error')) {
+        throw new ToyKitError(error.type, method, error.code, error, mutation);
+      }
+      throw error;
     } finally {
       clearTimeout(timer);
+      if (abort) signal?.removeEventListener('abort', abort);
+      if (cancel) {
+        this.waiters.delete(cancel);
+        this.waiting--;
+      }
+      this.telemetry.record({ event: 'request', method, outcome, elapsedMs: performance.now() - started,
+        level: outcome === 'ok' ? 'debug' : 'warn', code });
     }
   }
 
@@ -160,6 +233,7 @@ export class ToyAdapter {
 
   subscribe<K extends SubscriptionMethod>(method: K, listener: Parameters<ToySDK[K]>[0]): Unsubscribe;
   subscribe(method: SubscriptionMethod, listener: (...args: never[]) => void): Unsubscribe {
+    if (!subscriptions.has(method) || arguments.length !== 2) throw new ToyKitError('invalid_param');
     try {
       if (this.disposed) throw new ToyKitError('disposed', method);
       if (typeof listener !== 'function') throw new ToyKitError('invalid_param', method);
@@ -171,9 +245,16 @@ export class ToyAdapter {
         if (method === 'onChargeUnlockChange' && !validCharge(args[0])) return;
         if (method === 'onContainerChange' && !validResponse('getContainerState', args[0])) return;
         if (method === 'onPlayerChange' && !validResponse('getPlayerState', args[0])) return;
-        listener(...args);
+        const report = () => this.telemetry.record({ level: 'error', event: 'callback', method, outcome: 'error', elapsedMs: 0 });
+        try {
+          const result: unknown = listener(...args);
+          if (result != null) void Promise.resolve(result).catch(report);
+        } catch { report(); }
       });
-      if (typeof unsubscribe !== 'function') throw new ToyKitError('invalid_response', method);
+      if (typeof unsubscribe !== 'function') {
+        active = false;
+        throw new ToyKitError('invalid_response', method);
+      }
       const off = () => {
         if (!active) return;
         active = false;
@@ -188,32 +269,49 @@ export class ToyAdapter {
     }
   }
 
-  async dispose(): Promise<void> {
+  dispose(): Promise<void> {
+    if (this.disposal) return this.disposal;
     this.disposed = true;
-    const results = await Promise.allSettled([
-      ...[...this.subscriptions].map(async off => off()),
-      ...[...this.streams].map(stream => this.releaseStream(stream)),
-    ]);
-    const failures = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
-    if (failures.length) throw new AggregateError(failures, 'sdk_dispose_failed');
+    for (const cancel of this.waiters) cancel();
+    this.disposal = Promise.resolve().then(async () => {
+      const results = await Promise.allSettled([
+        ...[...this.subscriptions].map(async off => off()),
+        ...[...this.streams].map(stream => this.releaseStream(stream)),
+      ]);
+      const failures = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
+      if (failures.length) throw new AggregateError(failures, 'sdk_dispose_failed');
+    });
+    return this.disposal;
+  }
+
+  private cleanLateStream(stream: MediaStream): void {
+    void this.releaseStream(stream).catch(() => {});
   }
 
   private async releaseStream(stream: MediaStream): Promise<void> {
-    this.streams.delete(stream);
-    // Stop local tracks immediately even when the host cleanup is slow or fails.
-    for (const track of stream.getTracks()) track.stop();
+    if (this.releasing.has(stream)) return;
+    this.releasing.add(stream);
     try {
+      this.streams.delete(stream);
+      let trackError: unknown;
+      for (const track of stream.getTracks()) {
+        try { track.stop(); } catch (error) { trackError = error; }
+      }
       const request = this.sdk.stopMedia?.(stream);
       if (request) {
         let timer: ReturnType<typeof setTimeout> | undefined;
         try {
-          await Promise.race([request, new Promise(resolve => { timer = setTimeout(resolve, this.timeoutMs); })]);
+          await Promise.race([request, new Promise<never>((_, reject) => {
+            timer = setTimeout(() => reject(new ToyKitError('timeout', 'stopMedia')), this.timeoutMs);
+          })]);
         } finally {
           clearTimeout(timer);
         }
       }
-    } catch {
-      // The local tracks have already stopped.
+      if (trackError) throw trackError;
+    } catch (error) {
+      this.telemetry.record({ level: 'error', event: 'cleanup', method: 'stopMedia', outcome: 'error', elapsedMs: 0 });
+      throw normalize(error, 'stopMedia');
     }
   }
 

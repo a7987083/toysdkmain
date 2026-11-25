@@ -6,3 +6,5 @@
 - v0.4：SDK 实验室和 ZIP 已实现，已配置 Chromium 冒烟测试，待完成 B站实机验证。
 - v0.5：Vanilla、Phaser、Babylon.js 模板，以及 Hology 评估。
 - v0.6：游戏开发工具、官方发布工具集成与交接。
+
+- v0.4.0 稳定性修复优先于模板与脚手架。候选验证后推进真实 Toy 宿主和 WebView 验收。

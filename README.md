@@ -23,3 +23,5 @@ const data = await sdk.call('getCloudStorage');
 [SDK 实验室](docs/sdk-test-lab.md)提供 37 个公开方法的手动验证入口。GitHub Actions 的 `toy-sdk-test-lab` Artifact 含可上传的 ZIP。
 
 [游戏公共 SDK](docs/game-services.md)包含生命周期、版本化存档、排行榜结算和充电鉴权。使用 `npm pack` 可生成可安装的开发包。
+
+0.4 开发候选的初始化、会话、存档和诊断见 [稳定性迁移指南](docs/stability.md)。

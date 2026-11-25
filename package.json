@@ -1,6 +1,6 @@
 {
   "name": "toy-game-kit",
-  "version": "0.3.0-dev.0",
+  "version": "0.4.0-dev.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -41,6 +41,18 @@
     "./game-platform": {
       "types": "./dist/game-platform/index.d.ts",
       "default": "./dist/game-platform/index.js"
+    },
+    "./sdk-runtime": {
+      "types": "./dist/sdk-runtime/index.d.ts",
+      "default": "./dist/sdk-runtime/index.js"
+    },
+    "./sdk-session": {
+      "types": "./dist/sdk-session/index.d.ts",
+      "default": "./dist/sdk-session/index.js"
+    },
+    "./sdk-diagnostics": {
+      "types": "./dist/sdk-diagnostics/index.d.ts",
+      "default": "./dist/sdk-diagnostics/index.js"
     }
   },
   "files": [
@@ -51,6 +63,9 @@
     "dist/sdk-mock/",
     "dist/game-core/",
     "dist/game-storage/",
-    "dist/game-platform/"
+    "dist/game-platform/",
+    "dist/sdk-runtime/",
+    "dist/sdk-session/",
+    "dist/sdk-diagnostics/"
   ]
 }

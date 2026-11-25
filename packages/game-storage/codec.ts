@@ -8,7 +8,7 @@ export interface SaveSchema<T> {
 }
 
 export class SaveError extends Error {
-  constructor(readonly type: 'invalid_save' | 'save_too_large' | 'corrupt_save' | 'unsupported_version' | 'cache_failure',
+  constructor(readonly type: 'invalid_save' | 'save_too_large' | 'corrupt_save' | 'unsupported_version' | 'cache_failure' | 'cache_changed' | 'cache_lock_unavailable',
     options?: ErrorOptions) {
     super(type, options);
     this.name = 'SaveError';
@@ -33,6 +33,17 @@ export class SaveCodec<T> {
   }
 
   encode(value: T): string {
+    const encoded = this.serialize(value);
+    if (encoder.encode(encoded).byteLength > limits.maxValueBytes) throw new SaveError('save_too_large');
+    return encoded;
+  }
+
+  measure(value: T) {
+    const used = encoder.encode(this.serialize(value)).byteLength;
+    return { used, limit: limits.maxValueBytes, remaining: limits.maxValueBytes - used };
+  }
+
+  private serialize(value: T): string {
     let payload: string;
     try {
       payload = JSON.stringify({ version: this.version, data: value });
@@ -41,9 +52,7 @@ export class SaveCodec<T> {
     } catch (cause) {
       throw new SaveError('invalid_save', { cause });
     }
-    const encoded = JSON.stringify({ payload, checksum: checksum(payload) });
-    if (encoder.encode(encoded).byteLength > limits.maxValueBytes) throw new SaveError('save_too_large');
-    return encoded;
+    return JSON.stringify({ payload, checksum: checksum(payload) });
   }
 
   decode(raw: string): T {
