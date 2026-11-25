@@ -17,3 +17,7 @@ B站实机环境的授权、媒体、充电和预览行为尚未验证。已有�
 基线为 `ab3f536`，上次通过的 [基线 Actions](https://github.com/a7987083/toysdkmain/actions/runs/45404952775)。本地基线 26 项测试通过。当前候选新增稳定性回归和 TGZ 消费端测试。实验环境的 Chromium 启动器缺少浏览器可执行文件，浏览器实测以 GitHub Actions 的 Chromium 步骤为准。上游 CDN 0.5.5 保持一致，在线声明差异见 [官方核对记录](docs/upstream-baseline.md)。
 
 新入口和行为边界见 [稳定性迁移指南](docs/stability.md)。下步在真实设备核对账号切换、Web Locks、权限和 SDK 容器行为。
+
+## 0.4.2 候选
+
+从 dev 的 0.4.2-dev.0 继续。运行 npm ci --ignore-scripts、npm test，产物和消费端命令见 CI。实机验收优先覆盖账号切换、存档迟到回包、真实 Web Locks、充电、旋转、媒体及审核。 [验收与恢复说明](docs/repair-0.4.md)

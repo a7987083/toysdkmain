@@ -175,10 +175,19 @@ async function main() {
     if (bytes.length > 2 * 1024 * 1024) throw new Error('Offline SDK exceeds size limit');
     candidate.sdk = { url: sdkUrl, source: 'offline', ...inspectSdk(bytes) };
   } else {
-    const [sdk, document, repository, cli] = await Promise.all([
+    const sources = await Promise.allSettled([
       download(sdkUrl, 2 * 1024 * 1024), fetchDocument(),
       download(repositoryUrl, 512 * 1024), download(cliVersionUrl, 4096),
     ]);
+    const names = ['cdn', 'document', 'repository', 'cli'];
+    const failures = sources.flatMap((source, index) => source.status === 'rejected'
+      ? [{ source: names[index], error: String(source.reason) }] : []);
+    if (failures.length) {
+      await mkdir(values.output, { recursive: true });
+      await writeFile(join(values.output, 'candidate.json'), JSON.stringify({checkedAt: candidate.checkedAt, failures}, null, 2));
+      throw new Error(JSON.stringify(failures));
+    }
+    const [sdk, document, repository, cli] = sources.map(source => source.value);
     candidate.sdk = { url: sdkUrl, etag: sdk.etag, lastModified: sdk.lastModified, ...inspectSdk(sdk.bytes) };
     candidate.document = document;
     const commit = JSON.parse(textDecoder.decode(repository.bytes)).sha;

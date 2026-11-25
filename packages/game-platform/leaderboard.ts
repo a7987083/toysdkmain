@@ -14,6 +14,8 @@ export interface SettlementOptions {
 }
 
 export class GameLeaderboard {
+  private readonly lists = new Map<string, ReturnType<ToyAdapter['ranks']>>();
+  private readonly personal = new Map<string, ReturnType<ToyAdapter['myRank']>>();
   private receipts = new Map<string, Receipt>();
   private readonly inFlight = new Map<string, { score: number; result: Promise<{ score: number }> }>();
   private readonly key?: string;
@@ -37,13 +39,28 @@ export class GameLeaderboard {
   }
 
   list(options: Omit<RankQuery, 'board'> & { limit?: number } = {}) {
-    return this.adapter.ranks({ ...options, board: this.board });
+    this.options?.checkSession?.();
+    const key = JSON.stringify([options.period ?? 'all', options.limit]);
+    const pending = this.lists.get(key);
+    if (pending) return pending;
+    const result = this.adapter.ranks({ ...options, board: this.board }).then(rows => {
+      this.options?.checkSession?.();
+      return rows;
+    }).finally(() => this.lists.delete(key));
+    this.lists.set(key, result);
+    return result;
   }
 
   async mine(period?: RankQuery['period']) {
     this.options?.checkSession?.();
-    const result = await this.adapter.myRank({ period, board: this.board });
-    this.options?.checkSession?.();
+    const key = period ?? 'all';
+    const pending = this.personal.get(key);
+    if (pending) return pending;
+    const result = this.adapter.myRank({ period, board: this.board }).then(rank => {
+      this.options?.checkSession?.();
+      return rank;
+    }).finally(() => this.personal.delete(key));
+    this.personal.set(key, result);
     return result;
   }
 

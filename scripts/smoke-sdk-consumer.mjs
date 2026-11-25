@@ -45,7 +45,7 @@ if (globalThis.document) document.documentElement.dataset.consumer = 'ready';
   await mkdir(dist, { recursive: true });
   await cp(join(installed, 'dist'), join(dist, 'sdk'), { recursive: true });
   await cp(join(consumer, 'build/game.mjs'), join(dist, 'game.js'));
-  await writeFile(join(dist, 'index.html'), `<!doctype html><meta charset="utf-8">
+  await writeFile(join(dist, 'index.html'), `<!doctype html><meta charset="utf-8"><title>Toy SDK Consumer</title>
 <script type="importmap">{"imports":{"toy-game-kit":"./sdk/index.js","toy-game-kit/sdk-runtime":"./sdk/sdk-runtime/index.js","toy-game-kit/sdk-session":"./sdk/sdk-session/index.js"}}</script>
 <script type="module" src="./game.js"></script>\n`);
   console.log('Installed TGZ, compiled and ran the independent TypeScript game');

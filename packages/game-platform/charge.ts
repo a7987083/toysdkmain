@@ -55,11 +55,14 @@ export class ChargeAccess {
   /** Coalesce automatic rechecks. Explicit refresh remains able to supersede an earlier request. */
   check(): Promise<ChargeState> {
     if (!this.pending) {
-      const result = this.refresh().then(state => {
-        if (!this.dirty || this.disposed || this.pending !== result) return state;
-        this.dirty = false;
-        return this.refresh();
-      }).finally(() => { if (this.pending === result) this.pending = undefined; });
+      const result = this.refresh().finally(() => {
+        if (this.pending !== result) return;
+        this.pending = undefined;
+        if (this.dirty && !this.disposed) {
+          this.dirty = false;
+          void this.check();
+        }
+      });
       this.pending = result;
     }
     return this.pending;

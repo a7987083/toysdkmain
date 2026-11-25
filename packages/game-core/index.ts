@@ -62,6 +62,7 @@ export class GameLifecycle<Config> {
   }
 
   start(): Promise<void> {
+    if (this.pendingGameHook) return Promise.reject(new Error('game_hook_pending'));
     return this.enqueue(async () => {
       this.requireActive();
       if (this.current === 'idle') {
@@ -128,6 +129,7 @@ export class GameLifecycle<Config> {
   }
 
   private setPaused(paused: boolean): Promise<void> {
+    if (this.pendingGameHook) return Promise.reject(new Error('game_hook_pending'));
     return this.enqueue(async () => {
       this.requireActive();
       this.requestedPause = paused;

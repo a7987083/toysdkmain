@@ -8,7 +8,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { once } from 'node:events';
 
 const profile = await mkdtemp(join(tmpdir(), 'tgk-browser-'));
-const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
+const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.svg': 'image/svg+xml', '.woff': 'font/woff' };
 const prefix = '/toy/sdk-lab/';
 const server = createServer(async (req, res) => {
   const path = req.url === prefix ? prefix + 'index.html' : req.url;
@@ -18,7 +18,9 @@ const server = createServer(async (req, res) => {
   }
   try {
     const relative = path.slice(prefix.length);
-    const target = relative === 'consumer/' ? 'sdk-consumer/index.html'
+    const target = relative === 'vite/' ? 'vite-consumer/index.html'
+      : relative.startsWith('vite/') ? 'vite-consumer/' + relative.slice(5)
+      : relative === 'consumer/' ? 'sdk-consumer/index.html'
       : relative.startsWith('consumer/') ? 'sdk-consumer/' + relative.slice('consumer/'.length)
       : 'sdk-test-lab/' + relative;
     const body = await readFile(new URL('../dist/' + target, import.meta.url));
@@ -133,6 +135,11 @@ try {
     assert.equal(navigation.errorText, undefined);
     assert.notEqual(navigation.isDownload, true);
     await until('document.documentElement.dataset.consumer === "ready"');
+    await send('Page.navigate', { url: url + 'vite/#game' });
+    await until("document.querySelector('#status')?.textContent === 'SDK 已载入'");
+    const previous = await evaluate('document.documentElement.dataset.navigation');
+    await send('Page.reload', { ignoreCache: true });
+    await until(`document.documentElement.dataset.consumer === "ready" && document.documentElement.dataset.navigation !== ${JSON.stringify(previous)}`);
     assert.deepEqual(exceptions, []);
   }
   console.log('Chromium smoke passed: 37 methods, explicit Mock, storage, event subscription, 390px mobile layout');

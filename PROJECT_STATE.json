@@ -1,13 +1,18 @@
 {
-  "version": "0.4.0-dev.0",
+  "version": "0.4.2-dev.0",
   "branch": "dev",
-  "stage": "stability-candidate",
-  "baselineCommit": "ab3f5368be262b99f3974cfb70c89ef1ef8a9930",
+  "stage": "repair-candidate",
+  "baselineCommit": "32dbb57d47186d8ede5da73a289c875c2c8be571",
   "officialSdk": "0.5.5",
-  "publicMethods": 37,
+  "publicMethods": 36,
   "build": "passed",
   "test": "passed",
-  "ci": "candidate-pending",
+  "ci": {
+    "lastVerifiedCommit": "32dbb57d47186d8ede5da73a289c875c2c8be571",
+    "run": 45652560736,
+    "result": "success",
+    "candidate": "consult Actions for exact HEAD"
+  },
   "device": "unverified",
   "sdkMonitor": "push-passed",
   "sdkTestLab": "zip-and-diagnostics",
@@ -18,5 +23,7 @@
     "charge",
     "viewport"
   ],
-  "baselineActionsRun": 45404952775
+  "baselineActionsRun": 45652560736,
+  "historicalMethods": 37,
+  "localTests": 55
 }

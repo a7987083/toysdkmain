@@ -9,3 +9,7 @@
 - 云存档不提供 CAS，冲突检测只能比较写前快照。浏览器持久缓存依赖 Web Locks，目标 WebView 的支持情况待实机验证。
 - 上游在线声明已省略 `getAuthorVideoRange`，同一 CDN JS 仍含该能力，保留现有契约待宿主实测。
 - 账号边界只能隔离本地响应，已经发送的请求仍可能在官方宿主执行。
+
+## 0.4.2 候选
+
+当前在线声明仅列 36 个方法；历史 getAuthorVideoRange 通过 Adapter 返回 undocumented。跨设备存档缺少 CAS，刷新前的未知请求不能可靠确认。真实 WebView、榜单周期和账号审批仍待核验。 [验收与恢复说明](docs/repair-0.4.md)

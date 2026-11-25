@@ -65,6 +65,7 @@ export class ToyAdapter {
   private disposed = false;
   private readonly waiters = new Set<() => void>();
   private readonly releasing = new WeakMap<MediaStream, Promise<void>>();
+  private readonly cleanups = new Set<Promise<void>>();
   private disposal?: Promise<void>;
   private waiting = 0;
   readonly telemetry: SdkDiagnostics;
@@ -284,6 +285,7 @@ export class ToyAdapter {
     this.disposal = Promise.resolve().then(async () => {
       const results = await Promise.allSettled([
         ...[...this.subscriptions].map(async off => off()),
+        ...this.cleanups,
         ...[...this.streams].map(stream => this.releaseStream(stream)),
       ]);
       const failures = results.flatMap(result => result.status === 'rejected' ? [result.reason] : []);
@@ -300,6 +302,8 @@ export class ToyAdapter {
     const prior = this.releasing.get(stream);
     if (prior) return prior;
     const result = Promise.resolve().then(() => this.stopTracksAndHost(stream));
+    this.cleanups.add(result);
+    void result.then(() => this.cleanups.delete(result), () => this.cleanups.delete(result));
     this.releasing.set(stream, result);
     return result;
   }
@@ -327,6 +331,13 @@ export class ToyAdapter {
       this.telemetry.record({ level: 'error', event: 'cleanup', method: 'stopMedia', outcome: 'error', elapsedMs: 0 });
       throw normalize(error, 'stopMedia');
     }
+  }
+
+  async allowsInput(request: Parameters<ToySDK['checkInputSafety']>[0]): Promise<boolean> {
+    try {
+      const response = await this.call('checkInputSafety', request);
+      return response.status === 'ok' && response.passed === true;
+    } catch { return false; }
   }
 
   load(keys?: string[]) { return this.call('getCloudStorage', keys); }

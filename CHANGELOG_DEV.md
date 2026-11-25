@@ -37,3 +37,7 @@ Initial typed contract subset, adapter, explicit isolated mock and regression te
 - Adapter 加入运行时白名单、参数个数与嵌套校验、媒体迟到回收、错误分类及有界脱敏诊断。
 - 存档加入 Web Locks、缓存更新检测、待写操作恢复、提交复核和单槽导入导出。排行榜加入可持久化的结算状态。
 - 充电、视口与生命周期处理错序事件和初始化、销毁边界。测试实验室加入稳定性场景和 JSON 诊断。CI 增加独立 TGZ 消费端验证。
+
+## 0.4.2 候选
+
+0.4.1-dev.0 修复会话与真实在途写入竞态；0.4.2-dev.0 接入逐 API 核对、限流与内容安全处理、固定 Doctor 及 Vite 包消费端。 [验收与恢复说明](docs/repair-0.4.md)

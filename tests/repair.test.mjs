@@ -169,3 +169,40 @@ test('no Web Locks fails before mutating persistent storage, explicit memory wor
     assert.equal(memory.diagnostics().persistence,'memory');
   } finally { Object.defineProperty(globalThis,'navigator',previousNavigator); if(old) globalThis.Storage=old; else delete globalThis.Storage; }
 });
+
+test('input review fails closed; archived author range is not dispatched', async () => {
+  for (const response of [{status:'ok',passed:true},{status:'rejected',passed:false},{status:'unavailable',passed:false},
+      {status:'unexpected',passed:true},new Error('denied')]) {
+    const adapter=new ToyAdapter({checkInputSafety:async()=>{if(response instanceof Error)throw response;return response;}});
+    assert.equal(await adapter.allowsInput({text:'abc'}),response.status==='ok');
+  }
+  let calls=0;
+  const adapter=new ToyAdapter({getAuthorVideoRange:async()=>{calls++;}});
+  assert.equal(await adapter.supports('getAuthorVideoRange'),false);
+  await assert.rejects(adapter.call('getAuthorVideoRange',{}),{type:'undocumented'});
+  assert.equal(calls,0);
+});
+
+test('shared saves isolate players, authorized storage IDs and games', async () => {
+  const {MockSDK,MockStore}=await import('../dist/index.js');
+  const store=new MockStore();
+  const sdk=(toy,user,ids)=>new MockSDK(store,toy,user,new Set(ids));
+  await sdk('one','a',['st_a']).setSharedStorage('st_a',{k:'value'});
+  assert.deepEqual(await sdk('two','a',['st_a']).getSharedStorage('st_a'),{k:'value'});
+  assert.deepEqual(await sdk('one','b',['st_a']).getSharedStorage('st_a'),{});
+  assert.deepEqual(await sdk('two','a',['st_b']).getSharedStorage('st_b'),{});
+  await assert.rejects(sdk('two','a',[]).getSharedStorage('st_a'));
+});
+
+test('failed initialization requires successful compensation; async reentry fails promptly', async () => {
+  const { GameLifecycle } = await import('../dist/index.js');
+  let starts=0;
+  const game=new GameLifecycle({},{
+    async start(){ starts++; await Promise.resolve(); await game.pause(); },
+    rollbackStart(){throw new Error('cleanup_failed');}
+  },null);
+  await assert.rejects(game.start(),/game_hook_pending/);
+  await assert.rejects(game.start(),/cleanup_failed/);
+  assert.equal(starts,1);
+  await game.dispose();
+});
