@@ -22,7 +22,7 @@ const server = createServer(async (req, res) => {
       : relative.startsWith('consumer/') ? 'sdk-consumer/' + relative.slice('consumer/'.length)
       : 'sdk-test-lab/' + relative;
     const body = await readFile(new URL('../dist/' + target, import.meta.url));
-    res.writeHead(200, { 'Content-Type': mime[extname(path)] ?? 'application/octet-stream' }).end(body);
+    res.writeHead(200, { 'Content-Type': mime[extname(target)] ?? 'application/octet-stream' }).end(body);
   } catch {
     res.writeHead(404).end();
   }
@@ -81,6 +81,7 @@ try {
   async function until(expression) {
     for (let retry = 0; retry < 70; retry++) {
       if (await evaluate(expression)) return;
+      if (exceptions.length) throw new Error(exceptions.join('\n'));
       await delay(100);
     }
     throw new Error('Timed out: '+expression);
@@ -122,7 +123,9 @@ try {
   assert.equal(await evaluate('document.documentElement.scrollWidth <= innerWidth'), true);
   assert.deepEqual(exceptions, []);
   if (process.argv.includes('--consumer')) {
-    await send('Page.navigate', { url: url + 'consumer/' });
+    const navigation = await send('Page.navigate', { url: url + 'consumer/' });
+    assert.equal(navigation.errorText, undefined);
+    assert.notEqual(navigation.isDownload, true);
     await until('document.documentElement.dataset.consumer === "ready"');
     assert.deepEqual(exceptions, []);
   }
